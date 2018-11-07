@@ -8,18 +8,19 @@ rust:
 matrix:
   allow_failures:
     - rust: nightly
- script:
-   - cargo +nightly install --force clippy
-   - cargo update
-   - cargo clippy
-   - cargo build
-   - cargo test
+script:
+  - cargo +nightly install --force clippy
+  - cargo update
+  - cargo clippy
+  - cargo build
+  - cargo test
 cache:
-   cargo: true
+  cargo: true
 before_cache:
   - chmod -R a+r $HOME/.cargo
 addons:
   apt:
+    update: true
     packages:
       - libcurl4-openssl-dev
       - libelf-dev
