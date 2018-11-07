@@ -2,7 +2,6 @@
 name = "lrad"
 version = "0.1.0"
 authors = ["Sameer Puri <purisame@spuri.io>"]
-edition = "2018"
 description = "An update framework for applications running on hobbyist single-board-computers (CS5285 Final Project)"
 homepage = "https://github.com/sameer/lrad"
 repository = "https://github.com/sameer/lrad"
@@ -12,5 +11,11 @@ include = [
     "Cargo.toml",
     "**/*.toml",
 ]
+
+[badges]
+travis-ci = { repository = "https://github.com/sameer/lrad", branch = "master" }
+is-it-maintained-issue-resolution = { repository = "https://github.com/sameer/lrad" }
+is-it-maintained-open-issues = { repository = "https://github.com/sameer/lrad" }
+maintenance = { status = "passively-maintained" }
 
 [dependencies]
