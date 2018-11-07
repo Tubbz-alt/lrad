@@ -9,9 +9,7 @@ matrix:
   allow_failures:
     - rust: nightly
 script:
-  - cargo +nightly install --force clippy
   - cargo update
-  - cargo clippy
   - cargo build
   - cargo test
 cache:
