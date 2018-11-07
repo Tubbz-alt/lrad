@@ -7,5 +7,10 @@ description = "An update framework for applications running on hobbyist single-b
 homepage = "https://github.com/sameer/lrad"
 repository = "https://github.com/sameer/lrad"
 license = "MIT"
+include = [
+    "**/*.rs",
+    "Cargo.toml",
+    "**/*.toml",
+]
 
 [dependencies]
