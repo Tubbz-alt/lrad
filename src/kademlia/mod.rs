@@ -189,6 +189,7 @@ impl self::service::Service for Node {
         future::ready(magic_cookie)
     }
     fn store(self, _: context::Context, magic_cookie: Identifier) -> Self::StoreFut {
+        // TODO: add storage
         future::ready(magic_cookie)
     }
     fn find_node(
@@ -205,7 +206,8 @@ impl self::service::Service for Node {
         magic_cookie: Identifier,
         value_to_find: Identifier,
     ) -> Self::FindValueFut {
-        unimplemented!();
+        // TODO: add storage
+        future::ready((magic_cookie, WhoHasIt::SomeoneElse(self.k_closest_to(&value_to_find))))
     }
 }
 
