@@ -1,6 +1,6 @@
 use bit_vec::BitVec;
 use futures::future::{self, Ready};
-use openssl::{error::ErrorStack, rand};
+use openssl::{ec, error::ErrorStack, nid::Nid, pkey, rand};
 use std::collections::HashMap;
 use std::io;
 use std::iter::FromIterator;
@@ -11,7 +11,40 @@ use tarpc::context;
 mod service;
 
 #[derive(Eq, PartialEq, Hash, Debug, Serialize, Deserialize, Clone)]
+pub enum IdentifierSize {
+    _512,
+    _384,
+    _256,
+    _224,
+}
+
+impl IdentifierSize {
+    fn generate_ecdsa(self: &IdentifierSize) -> Result<ec::EcKey<pkey::Private>, ErrorStack> {
+        let nid = match self {
+            IdentifierSize::_512 => Nid::ECDSA_WITH_SHA512,
+            IdentifierSize::_384 => Nid::ECDSA_WITH_SHA384,
+            IdentifierSize::_256 => Nid::ECDSA_WITH_SHA256,
+            IdentifierSize::_224 => Nid::ECDSA_WITH_SHA224,
+        };
+        let ec_group = ec::EcGroup::from_curve_name(nid)?;
+        ec::EcKey::generate(&ec_group)
+    }
+}
+
+impl Into<usize> for &IdentifierSize {
+    fn into(self) -> usize {
+        match self {
+            IdentifierSize::_512 => 512,
+            IdentifierSize::_384 => 384,
+            IdentifierSize::_256 => 256,
+            IdentifierSize::_224 => 224,
+        }
+    }
+}
+
+#[derive(Eq, PartialEq, Hash, Debug, Serialize, Deserialize, Clone)]
 pub struct Identifier {
+    size: IdentifierSize,
     bits: BitVec,
 }
 
@@ -25,10 +58,11 @@ impl Identifier {
         }
     }
 
-    fn try_new(id_length: usize) -> Result<Self, ErrorStack> {
-        let mut id_buf: Vec<u8> = Vec::with_capacity(id_length);
+    fn try_new(id_size: &IdentifierSize) -> Result<Self, ErrorStack> {
+        let mut id_buf: Vec<u8> = Vec::with_capacity(id_size.into());
         rand::rand_bytes(&mut id_buf)?;
         Ok(Identifier {
+            size: id_size.clone(),
             bits: BitVec::from_bytes(&id_buf),
         })
     }
@@ -42,10 +76,10 @@ pub struct ContactInfo {
 }
 
 impl ContactInfo {
-    fn try_new(id_length: usize) -> Result<Self, ErrorStack> {
+    fn try_new(id_size: &IdentifierSize) -> Result<Self, ErrorStack> {
         Ok(ContactInfo {
             address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080)),
-            id: Identifier::try_new(id_length)?,
+            id: Identifier::try_new(id_size)?,
             round_trip_time: Duration::from_millis(0),
         })
     }
@@ -99,8 +133,8 @@ impl Bucket {
 
 #[derive(Eq, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Node {
+    id_size: IdentifierSize,
     alpha: usize,
-    id_length: usize,
     k: usize,
     who_am_i: ContactInfo,
     map: HashMap<BitVec, Bucket>,
@@ -108,22 +142,22 @@ pub struct Node {
 
 impl Node {
     pub fn try_new(
-        alpha: usize,
-        id_length: usize,
+        id_size: IdentifierSize,
         k: usize,
+        alpha: usize,
         who_am_i: Option<ContactInfo>,
     ) -> Result<Self, ErrorStack> {
         let who_am_i = match who_am_i {
             Some(contact_info) => {
-                assert_eq!(id_length, contact_info.id.bits.len());
+                assert_eq!(id_size, contact_info.id.size);
                 contact_info
             }
-            None => ContactInfo::try_new(id_length)?,
+            None => ContactInfo::try_new(&id_size)?,
         };
         Ok(Node {
-            alpha,
-            id_length,
+            id_size,
             k,
+            alpha,
             who_am_i,
             map: HashMap::new(),
         })
@@ -152,7 +186,7 @@ impl Node {
     }
 
     fn iter(&self) -> impl Iterator<Item = &Bucket> {
-        (1..=self.id_length).filter_map(move |distance| self.get(distance))
+        (1..=(&self.id_size).into()).filter_map(move |distance| self.get(distance))
     }
 
     fn k_closest(&self) -> impl Iterator<Item = &ContactInfo> {
@@ -161,7 +195,7 @@ impl Node {
 
     fn k_closest_to(&self, id: &Identifier) -> Vec<ContactInfo> {
         let distance = self.who_am_i.id.distance(&id);
-        (distance..=self.id_length)
+        (distance..=(&self.id_size).into())
             .filter_map(|distance| self.get(distance))
             .flat_map(|bucket| bucket.iter())
             .take(self.k)
@@ -207,7 +241,10 @@ impl self::service::Service for Node {
         value_to_find: Identifier,
     ) -> Self::FindValueFut {
         // TODO: add storage
-        future::ready((magic_cookie, WhoHasIt::SomeoneElse(self.k_closest_to(&value_to_find))))
+        future::ready((
+            magic_cookie,
+            WhoHasIt::SomeoneElse(self.k_closest_to(&value_to_find)),
+        ))
     }
 }
 
