@@ -19,3 +19,10 @@ is-it-maintained-open-issues = { repository = "https://github.com/sameer/lrad" }
 maintenance = { status = "passively-maintained" }
 
 [dependencies]
+openssl = "0.10"
+serde = "1.0"
+serde_derive = "1.0"
+tarpc = "0.14"
+bit-vec = {git = "https://github.com/sameer/bit-vec", version = "0.5", features = ["serde", "serde_derive"]}
+trust-dns-resolver = { version = "0.10", features = ["dns-over-rustls"] }
+futures-preview = { version = "0.3.0-alpha.9"}
