@@ -17,7 +17,7 @@ pub struct Identifier {
 
 impl Identifier {
     fn distance(&self, other: &Identifier) -> usize {
-        let id = self.bits.clone();
+        let mut id = self.bits.clone();
         if !id.union(&other.bits) {
             0
         } else {
@@ -148,11 +148,11 @@ impl Node {
 
     fn get_mut(&mut self, distance: usize) -> Option<&mut Bucket> {
         self.prefix(distance)
-            .and_then(|prefix| self.map.get_mut(&prefix))
+            .and_then(move |prefix| self.map.get_mut(&prefix))
     }
 
     fn iter(&self) -> impl Iterator<Item = &Bucket> {
-        (1..=self.id_length).filter_map(|distance| self.get(distance))
+        (1..=self.id_length).filter_map(move |distance| self.get(distance))
     }
 
     fn k_closest(&self) -> impl Iterator<Item = &ContactInfo> {
@@ -170,7 +170,8 @@ impl Node {
     }
 
     fn update(&mut self, sender: ContactInfo) {
-        match self.get_mut(self.who_am_i.id.distance(&sender.id)) {
+        let distance = self.who_am_i.id.distance(&sender.id);
+        match self.get_mut(distance) {
             Some(bucket) => bucket.update(sender, |_| true),
             None => (),
         };
