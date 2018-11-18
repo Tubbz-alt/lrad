@@ -16,10 +16,14 @@ extern crate serde_derive;
 extern crate bit_vec;
 extern crate futures;
 extern crate trust_dns_resolver;
+extern crate tokio_executor;
+extern crate tarpc_bincode_transport;
 
 const BIND_PORT: usize = 16840;
 
 mod kademlia;
+
+
 
 #[cfg(test)]
 mod tests {

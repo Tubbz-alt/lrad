@@ -1,12 +1,20 @@
 use bit_vec::BitVec;
-use futures::future::{self, Ready};
+use futures::{
+    compat::TokioDefaultSpawner,
+    future::{self, Ready},
+    prelude::*,
+};
 use openssl::{ec, error::ErrorStack, nid::Nid, pkey, rand};
 use std::collections::HashMap;
 use std::io;
 use std::iter::FromIterator;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use tarpc::context;
+use tarpc::{
+    client, context,
+    server::{self, Handler},
+};
 
 mod service;
 
@@ -28,6 +36,12 @@ impl IdentifierSize {
         };
         let ec_group = ec::EcGroup::from_curve_name(nid)?;
         ec::EcKey::generate(&ec_group)
+    }
+}
+
+impl Default for IdentifierSize {
+    fn default() -> Self {
+        IdentifierSize::_256
     }
 }
 
@@ -142,24 +156,18 @@ pub struct Node {
 
 impl Node {
     pub fn try_new(
-        id_size: IdentifierSize,
+        id_size: &IdentifierSize,
         k: usize,
         alpha: usize,
-        who_am_i: Option<ContactInfo>,
+        who_am_i: ContactInfo,
     ) -> Result<Self, ErrorStack> {
-        let who_am_i = match who_am_i {
-            Some(contact_info) => {
-                assert_eq!(id_size, contact_info.id.size);
-                contact_info
-            }
-            None => ContactInfo::try_new(&id_size)?,
-        };
-        Ok(Node {
-            id_size,
+        assert_eq!(*id_size, who_am_i.id.size);
+        Ok(Self {
+            id_size: id_size.clone(),
             k,
             alpha,
             who_am_i,
-            map: HashMap::new(),
+            map: HashMap::with_capacity(id_size.into()),
         })
     }
 
@@ -212,9 +220,35 @@ impl Node {
     }
 }
 
-use self::service::*;
+#[derive(Clone)]
+struct NodeService {
+    node: Arc<RwLock<Node>>,
+}
 
-impl self::service::Service for Node {
+impl NodeService {
+    fn new(node: Arc<RwLock<Node>>) -> NodeService {
+        NodeService { node }
+    }
+
+    fn try_spawn(&mut self) -> io::Result<()> {
+        let address = self.node.read().unwrap().who_am_i.address;
+        let transport = tarpc_bincode_transport::listen(&address)?;
+        tokio_executor::spawn(
+            server::Server::default()
+                .incoming(transport)
+                .take(1)
+                .respond_with(service::serve(self.clone()))
+                .unit_error()
+                .boxed()
+                .compat(),
+        );
+        Ok(())
+    }
+
+    fn bootstrap(&self) {}
+}
+
+impl self::service::Service for NodeService {
     type PingFut = Ready<Identifier>;
     type StoreFut = Self::PingFut;
     type FindNodeFut = Ready<(Identifier, Vec<ContactInfo>)>;
@@ -232,7 +266,10 @@ impl self::service::Service for Node {
         magic_cookie: Identifier,
         id_to_find: Identifier,
     ) -> Self::FindNodeFut {
-        future::ready((magic_cookie, self.k_closest_to(&id_to_find)))
+        future::ready((
+            magic_cookie,
+            self.node.read().unwrap().k_closest_to(&id_to_find),
+        ))
     }
     fn find_value(
         self,
@@ -243,7 +280,7 @@ impl self::service::Service for Node {
         // TODO: add storage
         future::ready((
             magic_cookie,
-            WhoHasIt::SomeoneElse(self.k_closest_to(&value_to_find)),
+            WhoHasIt::SomeoneElse(self.node.read().unwrap().k_closest_to(&value_to_find)),
         ))
     }
 }
