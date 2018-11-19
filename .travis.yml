@@ -6,13 +6,16 @@ matrix:
   - rust: nightly
 script:
   - ./test/build_openssl.sh
+  - ./test/build_kcov.sh
   - cargo update
   - cargo build -v
-  - cargo test
+  - cargo test --no-run
+  - kcov --verify --coveralls-id=$TRAVIS_JOB_ID --exclude-pattern=/.cargo target/cov target/debug/lrad*
 cache:
   cargo: true
   directories:
     - $HOME/openssl-1.1.1/
+    - $HOME/kcov-master/
   timeout: 360
 before_cache:
   - chmod -R a+r $HOME/.cargo
@@ -28,8 +31,3 @@ addons:
       - libdw-dev
       - cmake
       - gcc
-after_success: |
-  wget https://github.com/SimonKagstrom/kcov/archive/master.tar.gz &&
-  tar xzf master.tar.gz && mkdir kcov-master/build && cd kcov-master/build && cmake .. && make &&
-  sudo make install && cd ../.. &&
-  kcov --coveralls-id=$TRAVIS_JOB_ID --exclude-pattern=/.cargo target/kcov target/debug/lrad-*
