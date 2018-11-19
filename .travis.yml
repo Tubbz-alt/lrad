@@ -10,7 +10,7 @@ script:
   - cargo update
   - cargo build -v
   - cargo test --no-run
-  - kcov --coveralls-id=$TRAVIS_JOB_ID --exclude-pattern=/.cargo target/cov `find target/debug/ -maxdepth 1 -executable -type f`
+  - kcov --coveralls-id=$TRAVIS_JOB_ID --exclude-pattern=/.cargo --exclude-path=/usr target/cov `find target/debug/ -maxdepth 1 -executable -type f`
 cache:
   cargo: true
   directories:
