@@ -10,7 +10,7 @@ script:
   - cargo update
   - cargo build -v
   - cargo test --no-run
-  - kcov --verify --coveralls-id=$TRAVIS_JOB_ID --exclude-pattern=/.cargo target/cov target/debug/lrad*
+  - kcov --coveralls-id=$TRAVIS_JOB_ID --exclude-pattern=/.cargo target/cov `find target/debug/ -maxdepth 1 -executable -type f`
 cache:
   cargo: true
   directories:
@@ -29,5 +29,6 @@ addons:
       - libcurl4-openssl-dev
       - libelf-dev
       - libdw-dev
+      - binutils-dev
       - cmake
       - gcc
