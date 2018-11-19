@@ -15,13 +15,13 @@ use tarpc::{
     client, context,
     server::{self, Handler},
 };
+use tokio::runtime::current_thread::Runtime;
 use trust_dns_proto::rr::{domain::TryParseIp, record_data::RData};
 use trust_dns_resolver::{
     config::{ResolverConfig, ResolverOpts},
     error::ResolveError,
     Resolver,
 };
-use tokio::runtime::current_thread::Runtime;
 
 mod service;
 
@@ -98,11 +98,19 @@ pub struct ContactInfo {
 
 impl ContactInfo {
     pub fn try_new(id_size: &IdentifierSize) -> Result<Self, ErrorStack> {
-        Ok(ContactInfo {
+        Ok(Self {
             address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080)),
             id: Identifier::try_new(id_size)?,
             round_trip_time: Duration::from_millis(0),
         })
+    }
+
+    pub fn new(address: SocketAddr, id: Identifier) -> Self {
+        Self {
+            address,
+            id,
+            round_trip_time: Duration::from_millis(0),
+        }
     }
 
     fn ping(&self) -> io::Result<()> {
@@ -162,12 +170,7 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(
-        id_size: &IdentifierSize,
-        k: usize,
-        alpha: usize,
-        who_am_i: ContactInfo,
-    ) -> Self {
+    pub fn new(id_size: &IdentifierSize, k: usize, alpha: usize, who_am_i: ContactInfo) -> Self {
         assert_eq!(*id_size, who_am_i.id.size);
         Self {
             id_size: id_size.clone(),
@@ -233,6 +236,18 @@ pub struct NodeService {
     node: Arc<RwLock<Node>>,
 }
 
+async fn ping(id_size: IdentifierSize, socket_addr: &SocketAddr) -> io::Result<Option<Identifier>> {
+    let conn = tarpc_bincode_transport::connect(socket_addr);
+    let conn = await!(conn)?;
+    let mut client = await!(service::new_stub(client::Config::default(), conn))?;
+    let magic_cookie = Identifier::try_new(&id_size)?;
+    let res = await!(client.ping(context::current(), magic_cookie.clone()))?;
+    match magic_cookie == res.1 {
+        true => Ok(Some(res.0)),
+        false => Ok(None),
+    }
+}
+
 impl NodeService {
     fn new(id_size: IdentifierSize, node: Arc<RwLock<Node>>) -> NodeService {
         NodeService { id_size, node }
@@ -253,23 +268,11 @@ impl NodeService {
         Ok(())
     }
 
-    async fn ping(id_size: IdentifierSize, socket_addr: &SocketAddr) -> io::Result<bool> {
-        let conn = tarpc_bincode_transport::connect(socket_addr);
-        let conn = await!(conn)?;
-        let mut client = await!(service::new_stub(
-            client::Config::default(),
-            conn
-        ))?;
-        let magic_cookie = Identifier::try_new(&id_size)?;
-        let res: Identifier = await!(client.ping(context::current(), magic_cookie.clone()))?;
-        Ok(res == magic_cookie)
-    }
-
     fn bootstrap(&self, srv_record_name: &str) -> Result<(), ResolveError> {
         let resolver = Resolver::new(ResolverConfig::cloudflare_tls(), ResolverOpts::default())?;
-        let srv_records = resolver
-            .lookup_srv(srv_record_name)?;
-        let peers = srv_records
+        let srv_records = resolver.lookup_srv(srv_record_name)?;
+        let mut io_loop = Runtime::new()?;
+        let known_peers = srv_records
             .iter()
             .filter_map(move |srv_record| {
                 let target = srv_record.target().try_parse_ip()?;
@@ -283,31 +286,40 @@ impl NodeService {
                     }
                     _ => None,
                 }
+            })
+            .filter_map(|socket_addr| {
+                match io_loop.block_on(ping(self.id_size.clone(), &socket_addr).boxed().compat()) {
+                    Ok(Some(identity)) => Some(ContactInfo::new(socket_addr, identity)),
+                    _ => None,
+                }
             });
-        let node = self.node.write().unwrap();
-        let mut io_loop = Runtime::new()?;
-        peers.for_each(|peer| {
-            let identifier = io_loop.block_on(Self::ping(self.id_size.clone(), &peer).boxed().compat());
-        });
+        let mut node = self.node.write().unwrap();
+        known_peers.for_each(|contact| node.update(contact));
         Ok(())
     }
 }
 
 impl self::service::Service for NodeService {
-    type PingFut = Ready<Identifier>;
-    type StoreFut = Self::PingFut;
+    type PingFut = Ready<(Identifier, Identifier)>;
+    type StoreFut = Ready<Identifier>;
     type FindNodeFut = Ready<(Identifier, Vec<ContactInfo>)>;
     type FindValueFut = Ready<(Identifier, WhoHasIt)>;
     fn ping(self, _: context::Context, magic_cookie: Identifier) -> Self::PingFut {
-        future::ready(magic_cookie)
+        future::ready((self.node.read().unwrap().who_am_i.id.clone(), magic_cookie))
     }
-    fn store(self, _: context::Context, magic_cookie: Identifier) -> Self::StoreFut {
+    fn store(
+        self,
+        _: context::Context,
+        identity: Identifier,
+        magic_cookie: Identifier,
+    ) -> Self::StoreFut {
         // TODO: add storage
         future::ready(magic_cookie)
     }
     fn find_node(
         self,
         _: context::Context,
+        identity: Identifier,
         magic_cookie: Identifier,
         id_to_find: Identifier,
     ) -> Self::FindNodeFut {
@@ -319,6 +331,7 @@ impl self::service::Service for NodeService {
     fn find_value(
         self,
         _: context::Context,
+        identity: Identifier,
         magic_cookie: Identifier,
         value_to_find: Identifier,
     ) -> Self::FindValueFut {

@@ -16,10 +16,10 @@ extern crate serde_derive;
 extern crate bit_vec;
 extern crate futures;
 extern crate tarpc_bincode_transport;
+extern crate tokio;
 extern crate tokio_executor;
 extern crate trust_dns_proto;
 extern crate trust_dns_resolver;
-extern crate tokio;
 
 const BIND_PORT: usize = 16840;
 const SRV_RECORD: &str = "_lrad._tcp.spuri.io";
