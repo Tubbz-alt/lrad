@@ -3,7 +3,7 @@ dist: trusty
 language: rust
 matrix:
   include:
-- rust: nightly
+  - rust: nightly
 script:
   - ./test/build_openssl.sh
   - cargo update
