@@ -1,21 +1,24 @@
 sudo: true
 dist: trusty
 language: rust
-rust:
-  - stable
-  - beta
-  - nightly
 matrix:
-  allow_failures:
-    - rust: nightly
+  include:
+- rust: nightly
 script:
+  - ./test/build_openssl.sh
   - cargo update
-  - cargo build
+  - cargo build -v
   - cargo test
 cache:
   cargo: true
+  directories:
+    - $HOME/openssl-1.1.1/
+  timeout: 360
 before_cache:
   - chmod -R a+r $HOME/.cargo
+env:
+  global:
+  - OPENSSL_DIR=$HOME/openssl-1.1.1
 addons:
   apt:
     update: true
