@@ -1,6 +1,5 @@
 use bit_vec::BitVec;
 use futures::{
-    compat::TokioDefaultSpawner,
     future::{self, Ready},
     prelude::*,
 };
@@ -120,6 +119,16 @@ impl IdentifierSize {
             IdentifierSize::_224 => Nid::SECP224K1,
         }
     }
+
+    fn values<'a>() -> impl Iterator<Item = &'a Self> {
+        const VALUES: [IdentifierSize; 4] = [
+            IdentifierSize::_512,
+            IdentifierSize::_384,
+            IdentifierSize::_256,
+            IdentifierSize::_224,
+        ];
+        VALUES.iter()
+    }
 }
 
 impl Default for IdentifierSize {
@@ -148,11 +157,8 @@ pub struct Identifier {
 impl Identifier {
     fn distance(&self, other: &Identifier) -> usize {
         let mut id = self.bits.clone();
-        if !id.union(&other.bits) {
-            0
-        } else {
-            id.len() - id.iter().take_while(|bit| *bit).count()
-        }
+        id.intersect(&other.bits);
+        id.len() - id.iter().take_while(|bit| *bit).count()
     }
 
     fn new(identity: &NodeIdentity, id_size: &IdentifierSize) -> Self {
@@ -253,42 +259,73 @@ impl<T: PartialEq> Bucket<T> {
 
 #[cfg(test)]
 mod test {
-    fn ping_succeeds(_: &i32) -> bool { true }
-    fn ping_fails(_: &i32) -> bool { false }
+    mod identifier {
+        use super::super::{Identifier, IdentifierSize};
+        use bit_vec::BitVec;
 
-    #[test]
-    fn bucket_insert_stops_at_k_and_erases_older() {
-        let mut bucket = super::Bucket::new(3);
-        bucket.insert(1);
-        bucket.insert(2);
-        bucket.insert(3);
-        bucket.insert(4);
-        bucket.insert(5);
-        assert_eq!(bucket.len(), 3);
-        assert_eq!(bucket.vec, vec![3, 4, 5]);
+        fn zero(size: &IdentifierSize) -> Identifier {
+            Identifier {
+                size: size.clone(),
+                bits: BitVec::from_elem(size.into(), false),
+            }
+        }
+
+        fn one(size: &IdentifierSize) -> Identifier {
+            Identifier {
+                size: size.clone(),
+                bits: BitVec::from_elem(size.into(), true),
+            }
+        }
+
+        #[test]
+        fn identifier_distance_correct() {
+            IdentifierSize::values()
+                .for_each(|size| assert_eq!(zero(size).distance(&one(size)), size.into()));
+        }
     }
+    mod bucket {
+        use super::super::Bucket;
+        fn ping_succeeds(_: &i32) -> bool {
+            true
+        }
+        fn ping_fails(_: &i32) -> bool {
+            false
+        }
 
-    #[test]
-    fn bucket_update_stops_at_k_and_keeps_older_when_pings_succeed() {
-        let mut bucket = super::Bucket::new(3);
-        bucket.update(1, ping_succeeds);
-        bucket.update(2, ping_succeeds);
-        bucket.update(3, ping_succeeds);
-        bucket.update(4, ping_succeeds);
-        bucket.update(5, ping_fails);
-        assert_eq!(bucket.len(), 3);
-        assert_eq!(bucket.vec, vec![2, 3, 5]);
-    }
+        #[test]
+        fn bucket_insert_stops_at_k_and_erases_older() {
+            let mut bucket = Bucket::new(3);
+            bucket.insert(1);
+            bucket.insert(2);
+            bucket.insert(3);
+            bucket.insert(4);
+            bucket.insert(5);
+            assert_eq!(bucket.len(), 3);
+            assert_eq!(bucket.vec, vec![3, 4, 5]);
+        }
 
-    #[test]
-    fn bucket_update_stops_at_k_and_removes_older_when_pings_fail() {
-        let mut bucket = super::Bucket::new(3);
-        bucket.update(1, ping_fails);
-        bucket.update(2, ping_fails);
-        bucket.update(3, ping_fails);
-        bucket.update(4, ping_fails);
-        assert_eq!(bucket.len(), 3);
-        assert_eq!(bucket.vec, vec![2, 3, 4]);
+        #[test]
+        fn bucket_update_stops_at_k_and_keeps_older_when_pings_succeed() {
+            let mut bucket = Bucket::new(3);
+            bucket.update(1, ping_succeeds);
+            bucket.update(2, ping_succeeds);
+            bucket.update(3, ping_succeeds);
+            bucket.update(4, ping_succeeds);
+            bucket.update(5, ping_fails);
+            assert_eq!(bucket.len(), 3);
+            assert_eq!(bucket.vec, vec![2, 3, 5]);
+        }
+
+        #[test]
+        fn bucket_update_stops_at_k_and_removes_older_when_pings_fail() {
+            let mut bucket = Bucket::new(3);
+            bucket.update(1, ping_fails);
+            bucket.update(2, ping_fails);
+            bucket.update(3, ping_fails);
+            bucket.update(4, ping_fails);
+            assert_eq!(bucket.len(), 3);
+            assert_eq!(bucket.vec, vec![2, 3, 4]);
+        }
     }
 }
 
