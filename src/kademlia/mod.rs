@@ -207,7 +207,7 @@ pub struct Bucket<T> {
     vec: Vec<T>,
 }
 
-impl<T: PartialEq + Clone> Bucket<T> {
+impl<T: PartialEq> Bucket<T> {
     fn new(k: usize) -> Self {
         Bucket {
             k,
@@ -215,31 +215,31 @@ impl<T: PartialEq + Clone> Bucket<T> {
         }
     }
 
-    fn update<F>(&mut self, new_contact: T, ping: F)
+    fn update<F>(&mut self, value: T, ping: F)
     where
         F: Fn(&T) -> bool,
     {
-        self.vec.retain(|contact_info| *contact_info != new_contact);
+        self.vec.retain(|element| *element != value);
 
         if self.len() == self.k {
             match ping(&self.vec[0]) {
                 true => {}
                 false => {
                     self.vec.remove(0);
-                    self.vec.push(new_contact);
+                    self.vec.push(value);
                 }
             };
         } else {
-            self.vec.push(new_contact);
+            self.vec.push(value);
         }
     }
 
-    fn insert(&mut self, new_contact: T) {
-        self.vec.retain(|contact_info| *contact_info != new_contact);
+    fn insert(&mut self, value: T) {
+        self.vec.retain(|element| *element != value);
         if self.len() == self.k {
             self.vec.remove(0);
         }
-        self.vec.push(new_contact);
+        self.vec.push(value);
     }
 
     fn iter(&self) -> impl Iterator<Item = &T> {
