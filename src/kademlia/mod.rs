@@ -13,7 +13,7 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tarpc::{
-    client, context,
+    context,
     server::{self, Handler},
 };
 use tokio::runtime::current_thread::Runtime;
@@ -172,7 +172,7 @@ impl Identifier {
     }
 }
 
-#[derive(Eq, PartialEq, Debug, Serialize, Deserialize, Clone)]
+#[derive(Eq, PartialEq, Hash, Debug, Serialize, Deserialize, Clone)]
 pub struct ContactInfo {
     address: SocketAddr,
     id: Identifier,
@@ -344,31 +344,77 @@ impl Node {
 
 #[derive(Clone)]
 pub struct NodeService {
-    id_size: IdentifierSize,
     node: Arc<RwLock<Node>>,
 }
 
-async fn ping(
-    id_size: IdentifierSize,
-    node_identity: NodeIdentity,
-    socket_addr: &SocketAddr,
-) -> io::Result<Option<NodeIdentity>> {
-    let conn = tarpc_bincode_transport::connect(socket_addr);
-    let conn = await!(conn)?;
-    let mut client = await!(service::new_stub(client::Config::default(), conn))?;
-    let magic_cookie = Identifier::magic_cookie(&id_size)?;
-    let res = await!(client.ping(context::current(), node_identity, magic_cookie.clone()))?;
-    match magic_cookie == res.1 {
-        true => Ok(Some(res.0)),
-        false => Ok(None),
+#[derive(Clone)]
+pub struct NodeClient {
+    node: Arc<RwLock<Node>>,
+    tarpc_clients: HashMap<SocketAddr, service::Client>,
+}
+
+impl From<Arc<RwLock<Node>>> for NodeClient {
+    fn from(node: Arc<RwLock<Node>>) -> Self {
+        Self {
+            node,
+            tarpc_clients: HashMap::new(),
+        }
+    }
+}
+
+impl NodeClient {
+    fn block_on<F, T>(future03: F) -> io::Result<T>
+    where
+        F: futures::Future<Output = io::Result<T>>,
+    {
+        use futures::task::SpawnExt;
+        let mut io_loop = Runtime::new()?;
+        io_loop.block_on(future03.boxed().compat())
+    }
+
+    fn get_or_connect(&mut self, socket_addr: &SocketAddr) -> io::Result<&mut service::Client> {
+        if !self.tarpc_clients.contains_key(socket_addr) {
+            let mut new_client = Self::block_on(async {
+                use tarpc::client;
+                let conn = tarpc_bincode_transport::connect(socket_addr);
+                let conn = await!(conn)?;
+                await!(service::new_stub(client::Config::default(), conn))
+            })?;
+
+            self.tarpc_clients.insert(socket_addr.clone(), new_client);
+        }
+        Ok(self.tarpc_clients.get_mut(socket_addr).unwrap())
+    }
+
+    fn ping(&mut self, socket_addr: &SocketAddr) -> io::Result<Option<NodeIdentity>> {
+        let magic_cookie = Identifier::magic_cookie(&self.node.read().unwrap().id_size)?;
+        let identity = self
+            .node
+            .read()
+            .unwrap()
+            .who_am_i
+            .node_identity
+            .strip_private();
+        let mut client = self.get_or_connect(socket_addr)?;
+        let res = Self::block_on(client.ping(context::current(), identity, magic_cookie.clone()))?;
+        match magic_cookie == res.1 {
+            true => Ok(Some(res.0)),
+            false => Ok(None),
+        }
+    }
+}
+pub enum BootstrapMethod<'a> {
+    SrvRecord(&'a str),
+    SocketAddr(Vec<SocketAddr>),
+}
+
+impl From<Arc<RwLock<Node>>> for NodeService {
+    fn from(node: Arc<RwLock<Node>>) -> Self {
+        Self { node }
     }
 }
 
 impl NodeService {
-    fn new(id_size: IdentifierSize, node: Arc<RwLock<Node>>) -> NodeService {
-        NodeService { id_size, node }
-    }
-
     fn try_spawn(self) -> io::Result<()> {
         let address = self.node.read().unwrap().who_am_i.address;
         let transport = tarpc_bincode_transport::listen(&address)?;
@@ -384,48 +430,55 @@ impl NodeService {
         Ok(())
     }
 
-    fn bootstrap(&self, srv_record_name: &str) -> Result<(), ResolveError> {
-        let resolver = Resolver::new(ResolverConfig::cloudflare_tls(), ResolverOpts::default())?;
-        let srv_records = resolver.lookup_srv(srv_record_name)?;
-        let mut io_loop = Runtime::new()?;
-        let known_peers = srv_records
-            .iter()
-            .filter_map(move |srv_record| {
-                let target = srv_record.target().try_parse_ip()?;
-                let port = srv_record.port();
-                match target {
-                    RData::A(ip_v4_addr) => {
-                        Some(SocketAddr::V4(SocketAddrV4::new(ip_v4_addr, port)))
-                    }
-                    RData::AAAA(ip_v6_addr) => {
-                        Some(SocketAddr::V6(SocketAddrV6::new(ip_v6_addr, port, 0, 0)))
-                    }
-                    _ => None,
-                }
-            })
-            .filter_map(|socket_addr| {
-                match io_loop.block_on(
-                    ping(
-                        self.id_size.clone(),
-                        self.node
-                            .read()
-                            .unwrap()
-                            .who_am_i
-                            .node_identity
-                            .strip_private(),
-                        &socket_addr,
-                    )
-                    .boxed()
-                    .compat(),
-                ) {
+    fn find_contacts(
+        &self,
+        bootstrap_method: &BootstrapMethod,
+    ) -> Result<Vec<SocketAddr>, ResolveError> {
+        match bootstrap_method {
+            BootstrapMethod::SocketAddr(socket_addrs) => Ok(socket_addrs.clone()),
+            BootstrapMethod::SrvRecord(srv_record_name) => {
+                let resolver =
+                    Resolver::new(ResolverConfig::cloudflare_tls(), ResolverOpts::default())?;
+                let srv_records = resolver.lookup_srv(srv_record_name)?;
+                Ok(srv_records
+                    .iter()
+                    .filter_map(move |srv_record| {
+                        let target = srv_record.target().try_parse_ip()?;
+                        let port = srv_record.port();
+                        match target {
+                            RData::A(ip_v4_addr) => {
+                                Some(SocketAddr::V4(SocketAddrV4::new(ip_v4_addr, port)))
+                            }
+                            RData::AAAA(ip_v6_addr) => {
+                                Some(SocketAddr::V6(SocketAddrV6::new(ip_v6_addr, port, 0, 0)))
+                            }
+                            _ => None,
+                        }
+                    })
+                    .collect())
+            }
+        }
+    }
+
+    fn bootstrap(
+        &self,
+        client: &mut NodeClient,
+        bootstrap_method: &BootstrapMethod,
+    ) -> Result<(), ResolveError> {
+        let known_contacts = self.find_contacts(bootstrap_method)?;
+        let id_size = self.node.read().unwrap().id_size.clone();
+        let known_contacts =
+            known_contacts
+                .iter()
+                .filter_map(|socket_addr| match client.ping(&socket_addr) {
                     Ok(Some(identity)) => {
-                        Some(ContactInfo::new(socket_addr, &self.id_size, identity))
+                        Some(ContactInfo::new(socket_addr.clone(), &id_size, identity))
                     }
                     _ => None,
-                }
-            });
+                });
         let mut node = self.node.write().unwrap();
-        known_peers.for_each(|contact| node.insert(contact));
+        known_contacts.for_each(|contact| node.insert(contact));
+
         Ok(())
     }
 }
@@ -442,7 +495,15 @@ impl self::service::Service for NodeService {
         client_identity: NodeIdentity,
         magic_cookie: Identifier,
     ) -> Self::PingFut {
-        future::ready((self.node.read().unwrap().who_am_i.node_identity.strip_private(), magic_cookie))
+        future::ready((
+            self.node
+                .read()
+                .unwrap()
+                .who_am_i
+                .node_identity
+                .strip_private(),
+            magic_cookie,
+        ))
     }
 
     fn store(
