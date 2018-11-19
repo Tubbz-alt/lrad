@@ -202,12 +202,12 @@ impl ContactInfo {
 }
 
 #[derive(Eq, PartialEq, Serialize, Deserialize, Clone)]
-pub struct Bucket {
+pub struct Bucket<T> {
     k: usize,
-    vec: Vec<ContactInfo>,
+    vec: Vec<T>,
 }
 
-impl Bucket {
+impl<T: PartialEq + Clone> Bucket<T> {
     fn new(k: usize) -> Self {
         Bucket {
             k,
@@ -215,12 +215,11 @@ impl Bucket {
         }
     }
 
-    fn update<F>(&mut self, new_contact: ContactInfo, ping: F)
+    fn update<F>(&mut self, new_contact: T, ping: F)
     where
-        F: Fn(&ContactInfo) -> bool,
+        F: Fn(&T) -> bool,
     {
-        self.vec
-            .retain(|contact_info| contact_info.id != new_contact.id);
+        self.vec.retain(|contact_info| *contact_info != new_contact);
 
         if self.len() == self.k {
             match ping(&self.vec[0]) {
@@ -235,21 +234,58 @@ impl Bucket {
         }
     }
 
-    fn insert(&mut self, new_contact: ContactInfo) {
-        self.vec
-            .retain(|contact_info| contact_info.id != new_contact.id);
+    fn insert(&mut self, new_contact: T) {
+        self.vec.retain(|contact_info| *contact_info != new_contact);
         if self.len() == self.k {
             self.vec.remove(0);
         }
         self.vec.push(new_contact);
     }
 
-    fn iter(&self) -> impl Iterator<Item = &ContactInfo> {
+    fn iter(&self) -> impl Iterator<Item = &T> {
         self.vec.iter()
     }
 
     fn len(&self) -> usize {
         self.vec.len()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn bucket_insert_stops_at_k_and_erases_older() {
+        let mut bucket = super::Bucket::new(3);
+        bucket.insert(1);
+        bucket.insert(2);
+        bucket.insert(3);
+        bucket.insert(4);
+        assert_eq!(bucket.len(), 3);
+        assert_eq!(bucket.vec, vec![2, 3, 4]);
+    }
+
+    #[test]
+    fn bucket_update_stops_at_k_and_keeps_older_when_pings_succeed() {
+        let ping_succeeds = |_: &i32| true;
+        let mut bucket = super::Bucket::new(3);
+        bucket.update(1, ping_succeeds);
+        bucket.update(2, ping_succeeds);
+        bucket.update(3, ping_succeeds);
+        bucket.update(4, ping_succeeds);
+        assert_eq!(bucket.len(), 3);
+        assert_eq!(bucket.vec, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn bucket_update_stops_at_k_and_removes_older_when_pings_fail() {
+        let ping_succeeds = |_: &i32| false;
+        let mut bucket = super::Bucket::new(3);
+        bucket.update(1, ping_succeeds);
+        bucket.update(2, ping_succeeds);
+        bucket.update(3, ping_succeeds);
+        bucket.update(4, ping_succeeds);
+        assert_eq!(bucket.len(), 3);
+        assert_eq!(bucket.vec, vec![2, 3, 4]);
     }
 }
 
@@ -259,7 +295,7 @@ pub struct Node {
     alpha: usize,
     k: usize,
     who_am_i: ContactInfo,
-    map: HashMap<BitVec, Bucket>,
+    map: HashMap<BitVec, Bucket<ContactInfo>>,
 }
 
 impl Node {
@@ -286,22 +322,22 @@ impl Node {
         }
     }
 
-    fn get(&self, distance: usize) -> Option<&Bucket> {
+    fn get(&self, distance: usize) -> Option<&Bucket<ContactInfo>> {
         self.prefix(distance)
             .and_then(|prefix| self.map.get(&prefix))
     }
 
-    fn get_mut(&mut self, distance: usize) -> Option<&mut Bucket> {
+    fn get_mut(&mut self, distance: usize) -> Option<&mut Bucket<ContactInfo>> {
         self.prefix(distance)
             .and_then(move |prefix| self.map.get_mut(&prefix))
     }
 
-    fn entry(&mut self, distance: usize) -> Option<Entry<BitVec, Bucket>> {
+    fn entry(&mut self, distance: usize) -> Option<Entry<BitVec, Bucket<ContactInfo>>> {
         self.prefix(distance)
             .and_then(move |prefix| Some(self.map.entry(prefix)))
     }
 
-    fn iter(&self) -> impl Iterator<Item = &Bucket> {
+    fn iter(&self) -> impl Iterator<Item = &Bucket<ContactInfo>> {
         (1..=(&self.id_size).into()).filter_map(move |distance| self.get(distance))
     }
 
@@ -374,12 +410,14 @@ impl NodeClient {
 
     fn get_or_connect(&mut self, socket_addr: &SocketAddr) -> io::Result<&mut service::Client> {
         if !self.tarpc_clients.contains_key(socket_addr) {
-            let mut new_client = Self::block_on(async {
-                use tarpc::client;
-                let conn = tarpc_bincode_transport::connect(socket_addr);
-                let conn = await!(conn)?;
-                await!(service::new_stub(client::Config::default(), conn))
-            })?;
+            let mut new_client = Self::block_on(
+                async {
+                    use tarpc::client;
+                    let conn = tarpc_bincode_transport::connect(socket_addr);
+                    let conn = await!(conn)?;
+                    await!(service::new_stub(client::Config::default(), conn))
+                },
+            )?;
 
             self.tarpc_clients.insert(socket_addr.clone(), new_client);
         }
