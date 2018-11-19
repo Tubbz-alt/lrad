@@ -25,7 +25,9 @@ serde = "1.0"
 serde_derive = "1.0"
 tarpc = { version = "0.14", features = ["serde1"] }
 bit-vec = {git = "https://github.com/sameer/bit-vec", version = "0.5", features = ["serde", "serde_derive"]}
-trust-dns-resolver = { version = "0.10", features = ["dns-over-rustls"] }
+trust-dns-resolver = { version = "0.10", features = ["dns-over-openssl"] }
 futures-preview = { version = "0.3.0-alpha.9", features = ["compat", "tokio-compat"] }
 tokio-executor = "0.1"
 tarpc-bincode-transport = "0.3"
+trust-dns-proto = "0.5"
+tokio = "0.1 "

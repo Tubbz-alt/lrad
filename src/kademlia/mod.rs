@@ -8,13 +8,20 @@ use openssl::{ec, error::ErrorStack, nid::Nid, pkey, rand};
 use std::collections::HashMap;
 use std::io;
 use std::iter::FromIterator;
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tarpc::{
     client, context,
     server::{self, Handler},
 };
+use trust_dns_proto::rr::{domain::TryParseIp, record_data::RData};
+use trust_dns_resolver::{
+    config::{ResolverConfig, ResolverOpts},
+    error::ResolveError,
+    Resolver,
+};
+use tokio::runtime::current_thread::Runtime;
 
 mod service;
 
@@ -90,7 +97,7 @@ pub struct ContactInfo {
 }
 
 impl ContactInfo {
-    fn try_new(id_size: &IdentifierSize) -> Result<Self, ErrorStack> {
+    pub fn try_new(id_size: &IdentifierSize) -> Result<Self, ErrorStack> {
         Ok(ContactInfo {
             address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080)),
             id: Identifier::try_new(id_size)?,
@@ -155,20 +162,20 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn try_new(
+    pub fn new(
         id_size: &IdentifierSize,
         k: usize,
         alpha: usize,
         who_am_i: ContactInfo,
-    ) -> Result<Self, ErrorStack> {
+    ) -> Self {
         assert_eq!(*id_size, who_am_i.id.size);
-        Ok(Self {
+        Self {
             id_size: id_size.clone(),
             k,
             alpha,
             who_am_i,
             map: HashMap::with_capacity(id_size.into()),
-        })
+        }
     }
 
     fn prefix(&self, distance: usize) -> Option<BitVec> {
@@ -221,23 +228,24 @@ impl Node {
 }
 
 #[derive(Clone)]
-struct NodeService {
+pub struct NodeService {
+    id_size: IdentifierSize,
     node: Arc<RwLock<Node>>,
 }
 
 impl NodeService {
-    fn new(node: Arc<RwLock<Node>>) -> NodeService {
-        NodeService { node }
+    fn new(id_size: IdentifierSize, node: Arc<RwLock<Node>>) -> NodeService {
+        NodeService { id_size, node }
     }
 
-    fn try_spawn(&mut self) -> io::Result<()> {
+    fn try_spawn(self) -> io::Result<()> {
         let address = self.node.read().unwrap().who_am_i.address;
         let transport = tarpc_bincode_transport::listen(&address)?;
         tokio_executor::spawn(
             server::Server::default()
                 .incoming(transport)
                 .take(1)
-                .respond_with(service::serve(self.clone()))
+                .respond_with(service::serve(self))
                 .unit_error()
                 .boxed()
                 .compat(),
@@ -245,7 +253,44 @@ impl NodeService {
         Ok(())
     }
 
-    fn bootstrap(&self) {}
+    async fn ping(id_size: IdentifierSize, socket_addr: &SocketAddr) -> io::Result<bool> {
+        let conn = tarpc_bincode_transport::connect(socket_addr);
+        let conn = await!(conn)?;
+        let mut client = await!(service::new_stub(
+            client::Config::default(),
+            conn
+        ))?;
+        let magic_cookie = Identifier::try_new(&id_size)?;
+        let res: Identifier = await!(client.ping(context::current(), magic_cookie.clone()))?;
+        Ok(res == magic_cookie)
+    }
+
+    fn bootstrap(&self, srv_record_name: &str) -> Result<(), ResolveError> {
+        let resolver = Resolver::new(ResolverConfig::cloudflare_tls(), ResolverOpts::default())?;
+        let srv_records = resolver
+            .lookup_srv(srv_record_name)?;
+        let peers = srv_records
+            .iter()
+            .filter_map(move |srv_record| {
+                let target = srv_record.target().try_parse_ip()?;
+                let port = srv_record.port();
+                match target {
+                    RData::A(ip_v4_addr) => {
+                        Some(SocketAddr::V4(SocketAddrV4::new(ip_v4_addr, port)))
+                    }
+                    RData::AAAA(ip_v6_addr) => {
+                        Some(SocketAddr::V6(SocketAddrV6::new(ip_v6_addr, port, 0, 0)))
+                    }
+                    _ => None,
+                }
+            });
+        let node = self.node.write().unwrap();
+        let mut io_loop = Runtime::new()?;
+        peers.for_each(|peer| {
+            let identifier = io_loop.block_on(Self::ping(self.id_size.clone(), &peer).boxed().compat());
+        });
+        Ok(())
+    }
 }
 
 impl self::service::Service for NodeService {
