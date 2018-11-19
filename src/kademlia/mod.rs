@@ -253,6 +253,9 @@ impl<T: PartialEq> Bucket<T> {
 
 #[cfg(test)]
 mod test {
+    fn ping_succeeds(_: &i32) -> bool { true }
+    fn ping_fails(_: &i32) -> bool { false }
+
     #[test]
     fn bucket_insert_stops_at_k_and_erases_older() {
         let mut bucket = super::Bucket::new(3);
@@ -260,30 +263,30 @@ mod test {
         bucket.insert(2);
         bucket.insert(3);
         bucket.insert(4);
+        bucket.insert(5);
         assert_eq!(bucket.len(), 3);
-        assert_eq!(bucket.vec, vec![2, 3, 4]);
+        assert_eq!(bucket.vec, vec![3, 4, 5]);
     }
 
     #[test]
     fn bucket_update_stops_at_k_and_keeps_older_when_pings_succeed() {
-        let ping_succeeds = |_: &i32| true;
         let mut bucket = super::Bucket::new(3);
         bucket.update(1, ping_succeeds);
         bucket.update(2, ping_succeeds);
         bucket.update(3, ping_succeeds);
         bucket.update(4, ping_succeeds);
+        bucket.update(5, ping_fails);
         assert_eq!(bucket.len(), 3);
-        assert_eq!(bucket.vec, vec![1, 2, 3]);
+        assert_eq!(bucket.vec, vec![2, 3, 5]);
     }
 
     #[test]
     fn bucket_update_stops_at_k_and_removes_older_when_pings_fail() {
-        let ping_succeeds = |_: &i32| false;
         let mut bucket = super::Bucket::new(3);
-        bucket.update(1, ping_succeeds);
-        bucket.update(2, ping_succeeds);
-        bucket.update(3, ping_succeeds);
-        bucket.update(4, ping_succeeds);
+        bucket.update(1, ping_fails);
+        bucket.update(2, ping_fails);
+        bucket.update(3, ping_fails);
+        bucket.update(4, ping_fails);
         assert_eq!(bucket.len(), 3);
         assert_eq!(bucket.vec, vec![2, 3, 4]);
     }
