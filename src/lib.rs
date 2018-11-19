@@ -6,7 +6,7 @@
     async_await,
     proc_macro_hygiene
 )]
-#![feature(existential_type)]
+#![feature(try_from)]
 extern crate openssl;
 #[macro_use]
 extern crate tarpc;
@@ -40,5 +40,11 @@ mod tests {
             kademlia::ContactInfo::try_new(&id_size)
                 .expect("Random contact successfully generated"),
         );
+    }
+    #[test]
+    fn test_ssl() {
+        use openssl::nid::Nid;
+        let signature_algorithms = Nid::ECDSA_WITH_SHA256.signature_algorithms().unwrap();
+        println!("{}", signature_algorithms.pkey.long_name().unwrap());
     }
 }

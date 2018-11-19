@@ -4,8 +4,9 @@ use futures::{
     future::{self, Ready},
     prelude::*,
 };
-use openssl::{ec, error::ErrorStack, nid::Nid, pkey, rand};
-use std::collections::HashMap;
+use openssl::{ec, error::ErrorStack, nid::Nid, pkey, rand, sha};
+use std::collections::{hash_map::Entry, HashMap};
+use std::convert::TryFrom;
 use std::io;
 use std::iter::FromIterator;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
@@ -33,16 +34,91 @@ pub enum IdentifierSize {
     _224,
 }
 
+#[derive(Eq, PartialEq, Hash, Serialize, Deserialize, Clone)]
+pub struct NodeIdentity {
+    public_key: Vec<u8>,
+    private_key: Option<Vec<u8>>,
+}
+
+impl NodeIdentity {
+    fn try_new(id_size: &IdentifierSize) -> Result<Self, ErrorStack> {
+        Self::try_from(id_size.generate_ec()?)
+    }
+
+    fn strip_private(&self) -> Self {
+        NodeIdentity {
+            public_key: self.public_key.clone(),
+            private_key: None,
+        }
+    }
+}
+
+impl std::fmt::Debug for NodeIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "({:?}, REDACTED)", self.public_key)
+    }
+}
+
+impl TryFrom<ec::EcKey<pkey::Private>> for NodeIdentity {
+    type Error = ErrorStack;
+
+    fn try_from(key: ec::EcKey<pkey::Private>) -> Result<Self, Self::Error> {
+        let mut bn_ctx = openssl::bn::BigNumContext::new()?;
+        let ec_group = key.group();
+        Ok(Self {
+            public_key: key.public_key().to_bytes(
+                &ec_group,
+                ec::PointConversionForm::COMPRESSED,
+                &mut bn_ctx,
+            )?,
+            private_key: Some(key.private_key().to_vec()),
+        })
+    }
+}
+
+impl TryFrom<ec::EcKey<pkey::Public>> for NodeIdentity {
+    type Error = ErrorStack;
+
+    fn try_from(key: ec::EcKey<pkey::Public>) -> Result<Self, Self::Error> {
+        let mut bn_ctx = openssl::bn::BigNumContext::new()?;
+        let ec_group = key.group();
+        Ok(Self {
+            public_key: key.public_key().to_bytes(
+                &ec_group,
+                ec::PointConversionForm::COMPRESSED,
+                &mut bn_ctx,
+            )?,
+            private_key: None,
+        })
+    }
+}
+
 impl IdentifierSize {
-    fn generate_ecdsa(self: &IdentifierSize) -> Result<ec::EcKey<pkey::Private>, ErrorStack> {
-        let nid = match self {
-            IdentifierSize::_512 => Nid::ECDSA_WITH_SHA512,
-            IdentifierSize::_384 => Nid::ECDSA_WITH_SHA384,
-            IdentifierSize::_256 => Nid::ECDSA_WITH_SHA256,
-            IdentifierSize::_224 => Nid::ECDSA_WITH_SHA224,
-        };
-        let ec_group = ec::EcGroup::from_curve_name(nid)?;
-        ec::EcKey::generate(&ec_group)
+    fn generate_ec(&self) -> Result<ec::EcKey<pkey::Private>, ErrorStack> {
+        let ec_group = self.ec_group()?;
+        ec::EcKey::generate(ec_group.as_ref())
+    }
+
+    fn ec_group(&self) -> Result<ec::EcGroup, ErrorStack> {
+        ec::EcGroup::from_curve_name(self.close_ec())
+    }
+
+    fn hash(&self, bytes_to_hash: &[u8]) -> Vec<u8> {
+        match self {
+            IdentifierSize::_512 => sha::sha512(bytes_to_hash).to_vec(),
+            IdentifierSize::_384 => sha::sha384(bytes_to_hash).to_vec(),
+            IdentifierSize::_256 => sha::sha256(bytes_to_hash).to_vec(),
+            IdentifierSize::_224 => sha::sha224(bytes_to_hash).to_vec(),
+        }
+    }
+
+    fn close_ec(&self) -> Nid {
+        match self {
+            IdentifierSize::_512 => Nid::SECP521R1,
+            IdentifierSize::_384 => Nid::SECP384R1,
+            IdentifierSize::_256 => Nid::SECP256K1,
+            IdentifierSize::_224 => Nid::SECP224K1,
+        }
     }
 }
 
@@ -79,12 +155,19 @@ impl Identifier {
         }
     }
 
-    fn try_new(id_size: &IdentifierSize) -> Result<Self, ErrorStack> {
-        let mut id_buf: Vec<u8> = Vec::with_capacity(id_size.into());
-        rand::rand_bytes(&mut id_buf)?;
+    fn new(identity: &NodeIdentity, id_size: &IdentifierSize) -> Self {
+        Identifier {
+            size: id_size.clone(),
+            bits: BitVec::from_bytes(&id_size.hash(identity.public_key.as_slice())),
+        }
+    }
+
+    fn magic_cookie(id_size: &IdentifierSize) -> Result<Self, ErrorStack> {
+        let mut id_bytes = Vec::with_capacity(id_size.into());
+        rand::rand_bytes(&mut id_bytes)?;
         Ok(Identifier {
             size: id_size.clone(),
-            bits: BitVec::from_bytes(&id_buf),
+            bits: BitVec::from_bytes(&id_bytes),
         })
     }
 }
@@ -93,28 +176,28 @@ impl Identifier {
 pub struct ContactInfo {
     address: SocketAddr,
     id: Identifier,
+    node_identity: NodeIdentity,
     round_trip_time: Duration,
 }
 
 impl ContactInfo {
     pub fn try_new(id_size: &IdentifierSize) -> Result<Self, ErrorStack> {
+        let node_identity = NodeIdentity::try_new(&id_size)?;
         Ok(Self {
             address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080)),
-            id: Identifier::try_new(id_size)?,
+            id: Identifier::new(&node_identity, id_size),
+            node_identity,
             round_trip_time: Duration::from_millis(0),
         })
     }
 
-    pub fn new(address: SocketAddr, id: Identifier) -> Self {
+    pub fn new(address: SocketAddr, id_size: &IdentifierSize, node_identity: NodeIdentity) -> Self {
         Self {
             address,
-            id,
+            id: Identifier::new(&node_identity, id_size),
+            node_identity,
             round_trip_time: Duration::from_millis(0),
         }
-    }
-
-    fn ping(&self) -> io::Result<()> {
-        Ok(())
     }
 }
 
@@ -132,23 +215,33 @@ impl Bucket {
         }
     }
 
-    fn update<F>(&mut self, sender: ContactInfo, ping: F)
+    fn update<F>(&mut self, new_contact: ContactInfo, ping: F)
     where
-        F: FnOnce(&ContactInfo) -> bool,
+        F: Fn(&ContactInfo) -> bool,
     {
-        self.vec.retain(|contact_info| contact_info.id != sender.id);
+        self.vec
+            .retain(|contact_info| contact_info.id != new_contact.id);
 
         if self.len() == self.k {
-            match &self.vec[0].ping() {
-                Ok(_) => {}
-                Err(_) => {
+            match ping(&self.vec[0]) {
+                true => {}
+                false => {
                     self.vec.remove(0);
-                    self.vec.push(sender);
+                    self.vec.push(new_contact);
                 }
             };
         } else {
-            self.vec.push(sender);
+            self.vec.push(new_contact);
         }
+    }
+
+    fn insert(&mut self, new_contact: ContactInfo) {
+        self.vec
+            .retain(|contact_info| contact_info.id != new_contact.id);
+        if self.len() == self.k {
+            self.vec.remove(0);
+        }
+        self.vec.push(new_contact);
     }
 
     fn iter(&self) -> impl Iterator<Item = &ContactInfo> {
@@ -203,6 +296,11 @@ impl Node {
             .and_then(move |prefix| self.map.get_mut(&prefix))
     }
 
+    fn entry(&mut self, distance: usize) -> Option<Entry<BitVec, Bucket>> {
+        self.prefix(distance)
+            .and_then(move |prefix| Some(self.map.entry(prefix)))
+    }
+
     fn iter(&self) -> impl Iterator<Item = &Bucket> {
         (1..=(&self.id_size).into()).filter_map(move |distance| self.get(distance))
     }
@@ -221,12 +319,26 @@ impl Node {
             .collect()
     }
 
-    fn update(&mut self, sender: ContactInfo) {
-        let distance = self.who_am_i.id.distance(&sender.id);
-        match self.get_mut(distance) {
-            Some(bucket) => bucket.update(sender, |_| true),
-            None => (),
-        };
+    fn update<F>(&mut self, new_contact: ContactInfo, ping: F)
+    where
+        F: Fn(&ContactInfo) -> bool,
+    {
+        let distance = self.who_am_i.id.distance(&new_contact.id);
+        let k = self.k;
+        self.entry(distance)
+            .expect("Distance should be in range")
+            .or_insert(Bucket::new(k))
+            .update(new_contact, ping);
+    }
+
+    fn insert(&mut self, new_contact: ContactInfo) {
+        let distance = self.who_am_i.id.distance(&new_contact.id);
+        let k = self.k;
+        let bucket = self
+            .entry(distance)
+            .expect("Distance should be in range")
+            .or_insert(Bucket::new(k));
+        bucket.insert(new_contact);
     }
 }
 
@@ -236,12 +348,16 @@ pub struct NodeService {
     node: Arc<RwLock<Node>>,
 }
 
-async fn ping(id_size: IdentifierSize, socket_addr: &SocketAddr) -> io::Result<Option<Identifier>> {
+async fn ping(
+    id_size: IdentifierSize,
+    node_identity: NodeIdentity,
+    socket_addr: &SocketAddr,
+) -> io::Result<Option<NodeIdentity>> {
     let conn = tarpc_bincode_transport::connect(socket_addr);
     let conn = await!(conn)?;
     let mut client = await!(service::new_stub(client::Config::default(), conn))?;
-    let magic_cookie = Identifier::try_new(&id_size)?;
-    let res = await!(client.ping(context::current(), magic_cookie.clone()))?;
+    let magic_cookie = Identifier::magic_cookie(&id_size)?;
+    let res = await!(client.ping(context::current(), node_identity, magic_cookie.clone()))?;
     match magic_cookie == res.1 {
         true => Ok(Some(res.0)),
         false => Ok(None),
@@ -288,52 +404,75 @@ impl NodeService {
                 }
             })
             .filter_map(|socket_addr| {
-                match io_loop.block_on(ping(self.id_size.clone(), &socket_addr).boxed().compat()) {
-                    Ok(Some(identity)) => Some(ContactInfo::new(socket_addr, identity)),
+                match io_loop.block_on(
+                    ping(
+                        self.id_size.clone(),
+                        self.node
+                            .read()
+                            .unwrap()
+                            .who_am_i
+                            .node_identity
+                            .strip_private(),
+                        &socket_addr,
+                    )
+                    .boxed()
+                    .compat(),
+                ) {
+                    Ok(Some(identity)) => {
+                        Some(ContactInfo::new(socket_addr, &self.id_size, identity))
+                    }
                     _ => None,
                 }
             });
         let mut node = self.node.write().unwrap();
-        known_peers.for_each(|contact| node.update(contact));
+        known_peers.for_each(|contact| node.insert(contact));
         Ok(())
     }
 }
 
 impl self::service::Service for NodeService {
-    type PingFut = Ready<(Identifier, Identifier)>;
+    type PingFut = Ready<(NodeIdentity, Identifier)>;
     type StoreFut = Ready<Identifier>;
     type FindNodeFut = Ready<(Identifier, Vec<ContactInfo>)>;
     type FindValueFut = Ready<(Identifier, WhoHasIt)>;
-    fn ping(self, _: context::Context, magic_cookie: Identifier) -> Self::PingFut {
-        future::ready((self.node.read().unwrap().who_am_i.id.clone(), magic_cookie))
+
+    fn ping(
+        self,
+        _: context::Context,
+        client_identity: NodeIdentity,
+        magic_cookie: Identifier,
+    ) -> Self::PingFut {
+        future::ready((self.node.read().unwrap().who_am_i.node_identity.strip_private(), magic_cookie))
     }
+
     fn store(
         self,
         _: context::Context,
         identity: Identifier,
+        data: Vec<u8>,
         magic_cookie: Identifier,
     ) -> Self::StoreFut {
         // TODO: add storage
         future::ready(magic_cookie)
     }
+
     fn find_node(
         self,
         _: context::Context,
-        identity: Identifier,
-        magic_cookie: Identifier,
         id_to_find: Identifier,
+        magic_cookie: Identifier,
     ) -> Self::FindNodeFut {
         future::ready((
             magic_cookie,
             self.node.read().unwrap().k_closest_to(&id_to_find),
         ))
     }
+
     fn find_value(
         self,
         _: context::Context,
-        identity: Identifier,
-        magic_cookie: Identifier,
         value_to_find: Identifier,
+        magic_cookie: Identifier,
     ) -> Self::FindValueFut {
         // TODO: add storage
         future::ready((
