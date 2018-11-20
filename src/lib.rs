@@ -6,7 +6,7 @@
     async_await,
     proc_macro_hygiene
 )]
-#![feature(try_from)]
+#![feature(try_from, range_contains)]
 extern crate openssl;
 #[macro_use]
 extern crate tarpc;
@@ -34,7 +34,6 @@ mod tests {
         assert_eq!(2 + 2, 4);
         let id_size = kademlia::IdentifierSize::default();
         let node = kademlia::Node::new(
-            &id_size,
             20,
             3,
             kademlia::ContactInfo::try_new(&id_size)
