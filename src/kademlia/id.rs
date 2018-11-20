@@ -14,33 +14,6 @@ pub enum IdentifierSize {
 }
 
 impl IdentifierSize {
-    fn generate_ec(&self) -> Result<ec::EcKey<pkey::Private>, ErrorStack> {
-        let ec_group = self.ec_group()?;
-        ec::EcKey::generate(ec_group.as_ref())
-    }
-
-    fn ec_group(&self) -> Result<ec::EcGroup, ErrorStack> {
-        ec::EcGroup::from_curve_name(self.close_ec())
-    }
-
-    fn hash(&self, bytes_to_hash: &[u8]) -> Vec<u8> {
-        match self {
-            IdentifierSize::_512 => sha::sha512(bytes_to_hash).to_vec(),
-            IdentifierSize::_384 => sha::sha384(bytes_to_hash).to_vec(),
-            IdentifierSize::_256 => sha::sha256(bytes_to_hash).to_vec(),
-            IdentifierSize::_224 => sha::sha224(bytes_to_hash).to_vec(),
-        }
-    }
-
-    fn close_ec(&self) -> Nid {
-        match self {
-            IdentifierSize::_512 => Nid::SECP521R1,
-            IdentifierSize::_384 => Nid::SECP384R1,
-            IdentifierSize::_256 => Nid::SECP256K1,
-            IdentifierSize::_224 => Nid::SECP224K1,
-        }
-    }
-
     fn values<'a>() -> impl Iterator<Item = &'a Self> {
         const VALUES: [IdentifierSize; 4] = [
             IdentifierSize::_512,
@@ -89,7 +62,7 @@ impl Identifier {
     pub fn new(identity: &NodeIdentity, id_size: &IdentifierSize) -> Self {
         Identifier {
             size: id_size.clone(),
-            bits: BitVec::from_bytes(&id_size.hash(identity.public_key.as_slice())),
+            bits: BitVec::from_bytes(identity.hash().as_slice()),
         }
     }
 
@@ -136,35 +109,23 @@ impl Identifiable for Identifier {
     }
 }
 
+// An elliptic curve public/private key pair that represents the identity of a node.
 #[derive(Eq, PartialEq, Hash, Serialize, Deserialize, Clone)]
 pub struct NodeIdentity {
     public_key: Vec<u8>,
     private_key: Option<Vec<u8>>,
+    id_size: IdentifierSize,
 }
 
 impl NodeIdentity {
     fn try_new(id_size: &IdentifierSize) -> Result<Self, ErrorStack> {
-        Self::try_from(id_size.generate_ec()?)
+        Self::try_from_private_key(id_size, Self::generate_ec(id_size)?)
     }
 
-    fn strip_private(&self) -> Self {
-        NodeIdentity {
-            public_key: self.public_key.clone(),
-            private_key: None,
-        }
-    }
-}
-
-impl std::fmt::Debug for NodeIdentity {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "({:?}, REDACTED)", self.public_key)
-    }
-}
-
-impl TryFrom<ec::EcKey<pkey::Private>> for NodeIdentity {
-    type Error = ErrorStack;
-
-    fn try_from(key: ec::EcKey<pkey::Private>) -> Result<Self, Self::Error> {
+    fn try_from_private_key(
+        id_size: &IdentifierSize,
+        key: ec::EcKey<pkey::Private>,
+    ) -> Result<Self, ErrorStack> {
         let mut bn_ctx = openssl::bn::BigNumContext::new()?;
         let ec_group = key.group();
         Ok(Self {
@@ -174,14 +135,14 @@ impl TryFrom<ec::EcKey<pkey::Private>> for NodeIdentity {
                 &mut bn_ctx,
             )?,
             private_key: Some(key.private_key().to_vec()),
+            id_size: id_size.clone(),
         })
     }
-}
 
-impl TryFrom<ec::EcKey<pkey::Public>> for NodeIdentity {
-    type Error = ErrorStack;
-
-    fn try_from(key: ec::EcKey<pkey::Public>) -> Result<Self, Self::Error> {
+    fn try_from_public_key(
+        id_size: &IdentifierSize,
+        key: ec::EcKey<pkey::Public>,
+    ) -> Result<Self, ErrorStack> {
         let mut bn_ctx = openssl::bn::BigNumContext::new()?;
         let ec_group = key.group();
         Ok(Self {
@@ -191,7 +152,50 @@ impl TryFrom<ec::EcKey<pkey::Public>> for NodeIdentity {
                 &mut bn_ctx,
             )?,
             private_key: None,
+            id_size: id_size.clone(),
         })
+    }
+
+    fn strip_private(&self) -> Self {
+        NodeIdentity {
+            public_key: self.public_key.clone(),
+            private_key: None,
+            id_size: self.id_size.clone(),
+        }
+    }
+
+    fn generate_ec(size: &IdentifierSize) -> Result<ec::EcKey<pkey::Private>, ErrorStack> {
+        let ec_group = Self::ec_group(size)?;
+        ec::EcKey::generate(ec_group.as_ref())
+    }
+
+    fn ec_group(id_size: &IdentifierSize) -> Result<ec::EcGroup, ErrorStack> {
+        ec::EcGroup::from_curve_name(Self::close_ec(id_size))
+    }
+
+    fn hash(&self) -> Vec<u8> {
+        let bytes_to_hash = self.public_key.as_slice();
+        match self.id_size {
+            IdentifierSize::_512 => sha::sha512(bytes_to_hash).to_vec(),
+            IdentifierSize::_384 => sha::sha384(bytes_to_hash).to_vec(),
+            IdentifierSize::_256 => sha::sha256(bytes_to_hash).to_vec(),
+            IdentifierSize::_224 => sha::sha224(bytes_to_hash).to_vec(),
+        }
+    }
+
+    fn close_ec(id_size: &IdentifierSize) -> Nid {
+        match id_size {
+            IdentifierSize::_512 => Nid::SECP521R1,
+            IdentifierSize::_384 => Nid::SECP384R1,
+            IdentifierSize::_256 => Nid::SECP256K1,
+            IdentifierSize::_224 => Nid::SECP224K1,
+        }
+    }
+}
+
+impl std::fmt::Debug for NodeIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "({:?}, REDACTED)", self.public_key)
     }
 }
 
