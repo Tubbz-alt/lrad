@@ -85,10 +85,7 @@ impl<T: PartialEq + Serialize + Clone + Identifiable> Table<T> {
     }
 
     // TODO: pretty sure this is wrong
-    pub fn k_closest_to(
-        &self,
-        other_id: &Identifier,
-    ) -> impl Iterator<Item = &T> {
+    pub fn k_closest_to(&self, other_id: &Identifier) -> impl Iterator<Item = &T> {
         self.map
             .range((&self.id) ^ other_id..)
             .map(|x| x.1)
@@ -119,16 +116,17 @@ impl<T: PartialEq + Serialize + Clone + Identifiable> Identifiable for Table<T> 
         &self.id.id_size()
     }
 }
-
 #[cfg(test)]
 mod test {
     use super::super::id::test::{bits_id, one_id, zero_id};
     use super::{Bucket, Identifier, IdentifierSize, Table};
+
     mod bucket {
         use super::*;
         fn ping_succeeds(_: &i32) -> bool {
             true
         }
+
         fn ping_fails(_: &i32) -> bool {
             false
         }

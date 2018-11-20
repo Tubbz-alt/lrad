@@ -236,7 +236,13 @@ impl self::service::Service for NodeService {
     ) -> Self::FindNodeFut {
         future::ready((
             magic_cookie,
-            self.node.read().unwrap().table.k_closest_to(&id_to_find).map(Clone::clone).collect(),
+            self.node
+                .read()
+                .unwrap()
+                .table
+                .k_closest_to(&id_to_find)
+                .map(Clone::clone)
+                .collect(),
         ))
     }
 
@@ -249,7 +255,15 @@ impl self::service::Service for NodeService {
         // TODO: add storage
         future::ready((
             magic_cookie,
-            WhoHasIt::SomeoneElse(self.node.read().unwrap().table.k_closest_to(&value_to_find).map(Clone::clone).collect()),
+            WhoHasIt::SomeoneElse(
+                self.node
+                    .read()
+                    .unwrap()
+                    .table
+                    .k_closest_to(&value_to_find)
+                    .map(Clone::clone)
+                    .collect(),
+            ),
         ))
     }
 }

@@ -114,7 +114,7 @@ impl std::ops::BitXor for &Identifier {
             .zip(rhs.bits.iter())
             .take_while(|(a, b)| a == b)
             .count();
-            println!("prefix is {}", prefix_bits);
+        println!("prefix is {}", prefix_bits);
         let size: usize = (&self.size).into();
         size - prefix_bits
     }
