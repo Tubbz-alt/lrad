@@ -1,5 +1,4 @@
 use super::*;
-use std::iter::FromIterator;
 
 pub trait Identifiable {
     fn id(&self) -> &Identifier;

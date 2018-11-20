@@ -5,7 +5,7 @@ use futures::{
 };
 use openssl::{ec, error::ErrorStack, nid::Nid, pkey, rand, sha};
 use serde::Serialize;
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
@@ -113,9 +113,10 @@ impl NodeClient {
         let identity = self.node.read().unwrap().who_am_i.node_identity();
         let client = self.get_or_connect(socket_addr)?;
         let res = Self::block_on(client.ping(context::current(), identity, magic_cookie.clone()))?;
-        match magic_cookie == res.1 {
-            true => Ok(Some(res.0)),
-            false => Ok(None),
+        if magic_cookie == res.1 {
+            Ok(Some(res.0))
+        } else {
+            Ok(None)
         }
     }
 }
@@ -187,9 +188,7 @@ impl NodeService {
             known_contacts
                 .iter()
                 .filter_map(|socket_addr| match client.ping(&socket_addr) {
-                    Ok(Some(identity)) => {
-                        Some(ContactInfo::new(socket_addr.clone(), &id_size, identity))
-                    }
+                    Ok(Some(identity)) => Some(ContactInfo::new(*socket_addr, &id_size, identity)),
                     _ => None,
                 });
         let mut node = self.node.write().unwrap();

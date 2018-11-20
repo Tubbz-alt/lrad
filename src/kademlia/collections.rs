@@ -24,13 +24,11 @@ impl<T: PartialEq> Bucket<T> {
         self.vec.retain(|element| *element != value);
 
         if self.len() == self.k {
-            match ping(&self.vec[0]) {
-                true => {} // TODO: store the new node in a cache, an optimization for Kademlia
-                false => {
-                    self.vec.remove(0);
-                    self.vec.push(value);
-                }
-            };
+            // TODO: store the new node in a cache, an optimization for Kademlia
+            if !ping(&self.vec[0]) {
+                self.vec.remove(0);
+                self.vec.push(value);
+            }
         } else {
             self.vec.push(value);
         }
@@ -77,7 +75,7 @@ impl<T: PartialEq + Serialize + Clone + Identifiable> Table<T> {
 
     fn get_mut_or_insert(&mut self, distance: usize) -> &mut Bucket<T> {
         let k = self.k;
-        self.map.entry(distance).or_insert(Bucket::new(k))
+        self.map.entry(distance).or_insert_with(|| Bucket::new(k))
     }
 
     fn iter(&self) -> impl Iterator<Item = &Bucket<T>> + DoubleEndedIterator {
