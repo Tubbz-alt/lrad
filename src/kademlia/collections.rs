@@ -80,19 +80,20 @@ impl<T: PartialEq + Serialize + Clone + Identifiable> Table<T> {
         self.map.entry(distance).or_insert(Bucket::new(k))
     }
 
-    fn iter(&self) -> impl Iterator<Item = &Bucket<T>> {
+    fn iter(&self) -> impl Iterator<Item = &Bucket<T>> + DoubleEndedIterator {
         self.map.values()
     }
 
     // TODO: pretty sure this is wrong
-    pub fn k_closest_to(&self, other_id: &Identifier) -> Vec<T> {
+    pub fn k_closest_to(
+        &self,
+        other_id: &Identifier,
+    ) -> impl Iterator<Item = &T> {
         self.map
             .range((&self.id) ^ other_id..)
             .map(|x| x.1)
             .flat_map(|bucket| bucket.iter())
             .take(self.k)
-            .map(Clone::clone)
-            .collect()
     }
 
     pub fn update<F>(&mut self, value: T, ping: F)
@@ -145,6 +146,18 @@ mod test {
         }
 
         #[test]
+        fn bucket_insert_doesnt_duplicate_but_moves_recent_to_end() {
+            let mut bucket = Bucket::new(3);
+            bucket.insert(1);
+            bucket.insert(1);
+            bucket.insert(2);
+            bucket.insert(1);
+            bucket.insert(1);
+            assert_eq!(bucket.len(), 2);
+            assert_eq!(bucket.vec, vec![2, 1]);
+        }
+
+        #[test]
         fn bucket_update_stops_at_k_and_keeps_older_when_pings_succeed() {
             let mut bucket = Bucket::new(3);
             bucket.update(1, ping_succeeds);
@@ -172,24 +185,56 @@ mod test {
         use super::*;
         use bit_vec::BitVec;
 
-        fn table() -> Table<Identifier> {
-            Table::new(zero_id(&IdentifierSize::default()), 1)
+        fn id_in_each_bucket(
+            id_size: IdentifierSize,
+        ) -> impl Iterator<Item = Identifier> + DoubleEndedIterator {
+            let len: usize = IdentifierSize::default().into();
+            id_size
+                .as_range()
+                .rev()
+                .into_iter()
+                .map(move |x| bits_id(&id_size, BitVec::from_fn(len, |index| x - 1 == index)))
+        }
+
+        fn table_with_one_per_bucket() -> Table<Identifier> {
+            let id_size = IdentifierSize::default();
+            let mut table = Table::new(zero_id(&IdentifierSize::default()), (&id_size).into());
+
+            id_in_each_bucket(id_size).for_each(|id| table.insert(id));
+            table
         }
 
         #[test]
         fn table_inserts_one_per_bucket() {
-            let id_size = IdentifierSize::default();
-            let len: usize = IdentifierSize::default().into();
-            let mut table = table();
-            id_size
-                .as_range()
-                .into_iter()
-                .map(|x| {
-                    println!("Val is {}", x);
-                    bits_id(&id_size, BitVec::from_fn(len, |index| x - 1 == index))
-                })
-                .for_each(|id| table.insert(id));
-            table.iter().for_each(|bucket| assert_eq!(bucket.len(), 1));
+            table_with_one_per_bucket()
+                .iter()
+                .for_each(|bucket| assert_eq!(bucket.len(), 1));
+        }
+
+        #[test]
+        fn table_k_closest_ordered_correctly() {
+            let expected = id_in_each_bucket(IdentifierSize::default());
+            table_with_one_per_bucket()
+                .k_closest()
+                .zip(expected)
+                .for_each(|(a, b)| {
+                    assert_eq!(*a, b);
+                });
+        }
+
+        #[test]
+        fn table_k_closest_to_ordered_correctly() {
+            let ids_to_find = id_in_each_bucket(IdentifierSize::default());
+            let table = table_with_one_per_bucket();
+            ids_to_find.enumerate().for_each(|(i, id_to_find)| {
+                let expected = id_in_each_bucket(IdentifierSize::default()).skip(i);
+                table
+                    .k_closest_to(&id_to_find)
+                    .zip(expected)
+                    .for_each(|(a, b)| {
+                        assert_eq!(*a, b);
+                    });
+            });
         }
     }
 }
