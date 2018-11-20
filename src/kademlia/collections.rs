@@ -119,13 +119,14 @@ mod test {
     use super::super::id::test::{bits_id, one_id, zero_id};
     use super::{Bucket, Identifier, IdentifierSize, Table};
 
+    #[cfg_attr(feature = "cargo-clippy", allow(clippy::trivially_copy_pass_by_ref))]
     mod bucket {
         use super::*;
-        fn ping_succeeds(_: &i32) -> bool {
+        fn ping_succeeds(_: &usize) -> bool {
             true
         }
 
-        fn ping_fails(_: &i32) -> bool {
+        fn ping_fails(_: &usize) -> bool {
             false
         }
 
@@ -188,7 +189,6 @@ mod test {
             id_size
                 .as_range()
                 .rev()
-                .into_iter()
                 .map(move |x| bits_id(&id_size, BitVec::from_fn(len, |index| x - 1 == index)))
         }
 

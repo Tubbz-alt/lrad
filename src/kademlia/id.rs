@@ -275,7 +275,7 @@ pub mod test {
         fn identifier_distance_from_zero_to_single_bit_on_is_single_bit_on() {
             IdentifierSize::values().for_each(|size| {
                 let zero = zero_id(size);
-                size.as_range().into_iter().map(|x| {
+                size.as_range().for_each(|x| {
                     let single_bit_id =
                         bits_id(&size, BitVec::from_fn(size.into(), |index| index != x));
                     assert_eq!(&zero ^ &single_bit_id, x);
@@ -286,7 +286,10 @@ pub mod test {
         #[test]
         #[should_panic]
         fn identifier_xor_panics_when_size_different() {
-            zero_id(&IdentifierSize::default()) ^ zero_id(&IdentifierSize::_384);
+            assert_ne!(
+                zero_id(&IdentifierSize::default()) ^ zero_id(&IdentifierSize::_384),
+                0
+            )
         }
     }
 }
