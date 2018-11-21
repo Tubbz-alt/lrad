@@ -54,8 +54,14 @@ impl Node {
     fn insert(&mut self, new_contact: ContactInfo) {
         self.table.insert(new_contact);
     }
+}
 
-    fn id_size(&self) -> &IdentifierSize {
+impl Identifiable for Node {
+    fn id(&self) -> &Identifier {
+        self.table.id()
+    }
+
+    fn id_size(&self) -> IdentifierSize {
         self.table.id_size()
     }
 }
@@ -108,7 +114,7 @@ impl NodeClient {
 
     fn ping(&mut self, socket_addr: &SocketAddr) -> io::Result<Option<NodeIdentity>> {
         let identity = self.node.read().unwrap().who_am_i.node_identity();
-        let magic_cookie = Identifier::magic_cookie(&self.node.read().unwrap().id_size())?;
+        let magic_cookie = Identifier::magic_cookie(self.node.read().unwrap().id_size())?;
         let client = self.get_or_connect(socket_addr)?;
         let ping_fut = client.ping(context::current(), magic_cookie.clone(), identity.clone());
         Self::block_on(ping_fut).and_then(|(responder_magic_cookie, responder_identity)| {
@@ -120,14 +126,15 @@ impl NodeClient {
         })
     }
 
-    fn find_node(&mut self, identifier: &Identifier) -> io::Result<Option<ContactInfo>> {
+    fn find_node(&mut self, id_to_find: &Identifier) -> io::Result<Option<ContactInfo>> {
         let k = self.node.read().unwrap().table.k();
-        let mut table: Table<ContactInfo> = Table::new(identifier.clone(), k);
+        let id_size = self.node.read().unwrap().id_size();
+        let mut table: Table<ContactInfo> = Table::new(id_to_find.clone(), k);
         self.node
             .read()
             .unwrap()
             .table
-            .k_closest_to(identifier)
+            .k_closest_to(id_to_find)
             .map(Clone::clone)
             .for_each(|contact| table.insert(contact));
         let mut queried: HashSet<SocketAddr> = HashSet::new();
@@ -137,18 +144,18 @@ impl NodeClient {
                 .filter(|contact| !queried.contains(&contact.address))
                 .map(Clone::clone)
                 .collect();
-            if k_closest.len() == 0
-            {
-                return Ok(table.k_closest()
-                    .find(|x| x.id() == identifier)
+            if k_closest.len() == 0 {
+                return Ok(table
+                    .k_closest()
+                    .find(|x| x.id() == id_to_find)
                     .map(Clone::clone));
             }
             for k_contact in k_closest {
                 queried.insert(k_contact.address);
-                let magic_cookie = Identifier::magic_cookie(&self.node.read().unwrap().id_size())?;
+                let magic_cookie = Identifier::magic_cookie(id_size)?;
                 let client = self.get_or_connect(&k_contact.address)?;
                 let find_node_fut =
-                    client.find_node(context::current(), magic_cookie.clone(), identifier.clone());
+                    client.find_node(context::current(), magic_cookie.clone(), id_to_find.clone());
                 let new_contacts = Self::block_on(find_node_fut).and_then(
                     |(responder_magic_cookie, responder_contacts)| {
                         if magic_cookie == responder_magic_cookie {
@@ -172,14 +179,102 @@ impl NodeClient {
         }
     }
 
-    fn find_value(&mut self, identifier: &Identifier) {}
+    fn find_value(&mut self, value_to_find: &Identifier) -> io::Result<Option<Vec<u8>>> {
+        let k = self.node.read().unwrap().table.k();
+        let id_size = self.node.read().unwrap().id_size();
+        let mut table: Table<ContactInfo> = Table::new(value_to_find.clone(), k);
+        self.node
+            .read()
+            .unwrap()
+            .table
+            .k_closest_to(value_to_find)
+            .map(Clone::clone)
+            .for_each(|contact| table.insert(contact));
+        let mut queried: HashSet<SocketAddr> = HashSet::new();
+        loop {
+            let k_closest: Vec<ContactInfo> = table
+                .k_closest()
+                .filter(|contact| !queried.contains(&contact.address))
+                .map(Clone::clone)
+                .collect();
+            if k_closest.len() == 0 {
+                return Ok(None);
+            }
+            for k_contact in k_closest {
+                queried.insert(k_contact.address);
+                let magic_cookie = Identifier::magic_cookie(id_size)?;
+                let client = self.get_or_connect(&k_contact.address)?;
+                let find_node_fut = client.find_value(
+                    context::current(),
+                    magic_cookie.clone(),
+                    value_to_find.clone(),
+                );
+                let whohasit = Self::block_on(find_node_fut).and_then(
+                    |(responder_magic_cookie, responder_contacts)| {
+                        if magic_cookie == responder_magic_cookie {
+                            Ok(Some(responder_contacts))
+                        } else {
+                            Ok(None)
+                        }
+                    },
+                )?;
+                match whohasit {
+                    Some(whohasit) => match whohasit {
+                        WhoHasIt::Me(data) => {
+                            return Ok(Some(data));
+                        }
+                        WhoHasIt::SomeoneElse(other_contacts) => {
+                            let mut node = self.node.write().unwrap();
+                            other_contacts.iter().for_each(|other_contact| {
+                                table.insert(other_contact.clone());
+                                node.table.insert(other_contact.clone());
+                            });
+                        }
+                    },
+                    None => {}
+                };
+            }
+        }
+    }
 
-    fn store(&mut self, identifier: &Identifier) {}
+    fn store(&mut self, data: &[u8]) -> io::Result<()> {
+        let k = self.node.read().unwrap().table.k();
+        let id_size = self.node.read().unwrap().id_size();
+        let data_id = id_size.hash(data);
+
+        let k_closest: Vec<ContactInfo> = self
+            .node
+            .read()
+            .unwrap()
+            .table
+            .k_closest_to(&data_id)
+            .map(Clone::clone)
+            .collect();
+
+        for k_contact in k_closest {
+            let magic_cookie = Identifier::magic_cookie(id_size)?;
+            let client = self.get_or_connect(&k_contact.address)?;
+            let store_fut = client.store(
+                context::current(),
+                magic_cookie.clone(),
+                data_id.clone(),
+                data.to_vec(),
+            );
+            Self::block_on(store_fut).and_then(|responder_magic_cookie| {
+                if magic_cookie == responder_magic_cookie {
+                    Ok(())
+                } else {
+                    Ok(())
+                }
+            })?;
+        }
+        Ok(())
+    }
 }
 pub enum BootstrapMethod<'a> {
     SrvRecord(&'a str),
     SocketAddr(Vec<SocketAddr>),
-    Mdns(&'a str),
+    Mdns(&'a str), // TODO: Add support via mdns crate
 }
 
 impl From<Arc<RwLock<Node>>> for NodeService {
@@ -241,12 +336,11 @@ impl NodeService {
         bootstrap_method: &BootstrapMethod,
     ) -> Result<(), ResolveError> {
         let known_contacts = self.find_contacts(bootstrap_method)?;
-        let id_size = self.node.read().unwrap().id_size().clone();
         let known_contacts =
             known_contacts
                 .iter()
                 .filter_map(|socket_addr| match client.ping(&socket_addr) {
-                    Ok(Some(identity)) => Some(ContactInfo::new(*socket_addr, &id_size, identity)),
+                    Ok(Some(identity)) => Some(ContactInfo::new(*socket_addr, identity)),
                     _ => None,
                 });
         let mut node = self.node.write().unwrap();

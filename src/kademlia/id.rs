@@ -2,10 +2,10 @@ use super::*;
 
 pub trait Identifiable {
     fn id(&self) -> &Identifier;
-    fn id_size(&self) -> &IdentifierSize;
+    fn id_size(&self) -> IdentifierSize;
 }
 
-#[derive(Eq, PartialEq, Hash, Debug, Serialize, Deserialize, Clone)]
+#[derive(Eq, PartialEq, Hash, Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum IdentifierSize {
     _512,
     _384,
@@ -24,8 +24,24 @@ impl IdentifierSize {
         VALUES.iter()
     }
 
-    pub fn as_range(&self) -> std::ops::RangeInclusive<usize> {
+    pub fn as_range(self) -> std::ops::RangeInclusive<usize> {
         (1..=self.into())
+    }
+
+    pub fn hash(self, data: &[u8]) -> Identifier {
+        // TODO: Use SHAKE [once supported](https://github.com/sfackler/rust-openssl/issues/1017)
+        Identifier {
+            size: self,
+            bits: BitVec::from_bytes(
+                match self {
+                    IdentifierSize::_512 => sha::sha512(data).to_vec(),
+                    IdentifierSize::_384 => sha::sha384(data).to_vec(),
+                    IdentifierSize::_256 => sha::sha256(data).to_vec(),
+                    IdentifierSize::_224 => sha::sha224(data).to_vec(),
+                }
+                .as_slice(),
+            ),
+        }
     }
 }
 
@@ -35,7 +51,7 @@ impl Default for IdentifierSize {
     }
 }
 
-impl Into<usize> for &IdentifierSize {
+impl Into<usize> for IdentifierSize {
     fn into(self) -> usize {
         match self {
             IdentifierSize::_512 => 512,
@@ -46,12 +62,6 @@ impl Into<usize> for &IdentifierSize {
     }
 }
 
-impl Into<usize> for IdentifierSize {
-    fn into(self) -> usize {
-        (&self).into()
-    }
-}
-
 #[derive(Eq, PartialEq, Hash, Debug, Serialize, Deserialize, Clone)]
 pub struct Identifier {
     size: IdentifierSize,
@@ -59,18 +69,11 @@ pub struct Identifier {
 }
 
 impl Identifier {
-    pub fn new(identity: &NodeIdentity, id_size: &IdentifierSize) -> Self {
-        Identifier {
-            size: id_size.clone(),
-            bits: BitVec::from_bytes(identity.hash().as_slice()),
-        }
-    }
-
-    pub fn magic_cookie(id_size: &IdentifierSize) -> Result<Self, ErrorStack> {
+    pub fn magic_cookie(id_size: IdentifierSize) -> Result<Self, ErrorStack> {
         let mut id_bytes = Vec::with_capacity(id_size.into());
         rand::rand_bytes(&mut id_bytes)?;
         Ok(Identifier {
-            size: id_size.clone(),
+            size: id_size,
             bits: BitVec::from_bytes(&id_bytes),
         })
     }
@@ -87,7 +90,7 @@ impl std::ops::BitXor for &Identifier {
             .take_while(|(a, b)| a == b)
             .count();
         println!("prefix is {}", prefix_bits);
-        let size: usize = (&self.size).into();
+        let size: usize = self.size.into();
         size - prefix_bits
     }
 }
@@ -104,8 +107,8 @@ impl Identifiable for Identifier {
         self
     }
 
-    fn id_size(&self) -> &IdentifierSize {
-        &self.size
+    fn id_size(&self) -> IdentifierSize {
+        self.size
     }
 }
 
@@ -118,12 +121,12 @@ pub struct NodeIdentity {
 }
 
 impl NodeIdentity {
-    fn try_new(id_size: &IdentifierSize) -> Result<Self, ErrorStack> {
+    fn try_new(id_size: IdentifierSize) -> Result<Self, ErrorStack> {
         Self::try_from_private_key(id_size, Self::generate_ec(id_size)?)
     }
 
     fn try_from_private_key(
-        id_size: &IdentifierSize,
+        id_size: IdentifierSize,
         key: ec::EcKey<pkey::Private>,
     ) -> Result<Self, ErrorStack> {
         let mut bn_ctx = openssl::bn::BigNumContext::new()?;
@@ -135,12 +138,12 @@ impl NodeIdentity {
                 &mut bn_ctx,
             )?,
             private_key: Some(key.private_key().to_vec()),
-            id_size: id_size.clone(),
+            id_size: id_size,
         })
     }
 
     fn try_from_public_key(
-        id_size: &IdentifierSize,
+        id_size: IdentifierSize,
         key: ec::EcKey<pkey::Public>,
     ) -> Result<Self, ErrorStack> {
         let mut bn_ctx = openssl::bn::BigNumContext::new()?;
@@ -152,7 +155,7 @@ impl NodeIdentity {
                 &mut bn_ctx,
             )?,
             private_key: None,
-            id_size: id_size.clone(),
+            id_size: id_size,
         })
     }
 
@@ -160,37 +163,32 @@ impl NodeIdentity {
         NodeIdentity {
             public_key: self.public_key.clone(),
             private_key: None,
-            id_size: self.id_size.clone(),
+            id_size: self.id_size,
         }
     }
 
-    fn generate_ec(size: &IdentifierSize) -> Result<ec::EcKey<pkey::Private>, ErrorStack> {
+    fn generate_ec(size: IdentifierSize) -> Result<ec::EcKey<pkey::Private>, ErrorStack> {
         let ec_group = Self::ec_group(size)?;
         ec::EcKey::generate(ec_group.as_ref())
     }
 
-    fn ec_group(id_size: &IdentifierSize) -> Result<ec::EcGroup, ErrorStack> {
+    fn ec_group(id_size: IdentifierSize) -> Result<ec::EcGroup, ErrorStack> {
         ec::EcGroup::from_curve_name(Self::close_ec(id_size))
     }
 
-    // TODO: Use SHAKE [once supported](https://github.com/sfackler/rust-openssl/issues/1017)
-    fn hash(&self) -> Vec<u8> {
-        let bytes_to_hash = self.public_key.as_slice();
-        match self.id_size {
-            IdentifierSize::_512 => sha::sha512(bytes_to_hash).to_vec(),
-            IdentifierSize::_384 => sha::sha384(bytes_to_hash).to_vec(),
-            IdentifierSize::_256 => sha::sha256(bytes_to_hash).to_vec(),
-            IdentifierSize::_224 => sha::sha224(bytes_to_hash).to_vec(),
-        }
-    }
-
-    fn close_ec(id_size: &IdentifierSize) -> Nid {
+    fn close_ec(id_size: IdentifierSize) -> Nid {
         match id_size {
             IdentifierSize::_512 => Nid::SECP521R1,
             IdentifierSize::_384 => Nid::SECP384R1,
             IdentifierSize::_256 => Nid::SECP256K1,
             IdentifierSize::_224 => Nid::SECP224K1,
         }
+    }
+}
+
+impl Into<Identifier> for &NodeIdentity {
+    fn into(self) -> Identifier {
+        self.id_size.hash(self.public_key.as_slice())
     }
 }
 
@@ -209,20 +207,20 @@ pub struct ContactInfo {
 }
 
 impl ContactInfo {
-    pub fn try_new(id_size: &IdentifierSize) -> Result<Self, ErrorStack> {
-        let node_identity = NodeIdentity::try_new(&id_size)?;
+    pub fn try_new(id_size: IdentifierSize) -> Result<Self, ErrorStack> {
+        let node_identity = NodeIdentity::try_new(id_size)?;
         Ok(Self {
             address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080)),
-            id: Identifier::new(&node_identity, id_size),
+            id: (&node_identity).into(),
             node_identity,
             round_trip_time: Duration::from_millis(0),
         })
     }
 
-    pub fn new(address: SocketAddr, id_size: &IdentifierSize, node_identity: NodeIdentity) -> Self {
+    pub fn new(address: SocketAddr, node_identity: NodeIdentity) -> Self {
         Self {
             address,
-            id: Identifier::new(&node_identity, id_size),
+            id: (&node_identity).into(),
             node_identity,
             round_trip_time: Duration::from_millis(0),
         }
@@ -238,8 +236,8 @@ impl Identifiable for ContactInfo {
         &self.id
     }
 
-    fn id_size(&self) -> &IdentifierSize {
-        &self.id.id_size()
+    fn id_size(&self) -> IdentifierSize {
+        self.id.id_size()
     }
 }
 
@@ -247,19 +245,16 @@ impl Identifiable for ContactInfo {
 pub mod test {
     use super::{BitVec, Identifier, IdentifierSize};
 
-    pub fn zero_id(size: &IdentifierSize) -> Identifier {
+    pub fn zero_id(size: IdentifierSize) -> Identifier {
         bits_id(size, BitVec::from_elem(size.into(), false))
     }
 
-    pub fn one_id(size: &IdentifierSize) -> Identifier {
+    pub fn one_id(size: IdentifierSize) -> Identifier {
         bits_id(size, BitVec::from_elem(size.into(), true))
     }
 
-    pub fn bits_id(size: &IdentifierSize, bits: BitVec) -> Identifier {
-        Identifier {
-            size: size.clone(),
-            bits,
-        }
+    pub fn bits_id(size: IdentifierSize, bits: BitVec) -> Identifier {
+        Identifier { size: size, bits }
     }
 
     mod identifier {
@@ -268,22 +263,25 @@ pub mod test {
         #[test]
         fn identifier_distance_max_equals_size() {
             IdentifierSize::values()
-                .for_each(|size| assert_eq!(zero_id(size) ^ one_id(size), size.into()));
+                .for_each(|size| assert_eq!(zero_id(*size) ^ one_id(*size), (*size).into()));
         }
 
         #[test]
         fn identifier_distance_to_same_is_zero() {
-            IdentifierSize::values().for_each(|size| assert_eq!(zero_id(size) ^ zero_id(size), 0));
+            IdentifierSize::values()
+                .for_each(|size| assert_eq!(zero_id(*size) ^ zero_id(*size), 0));
         }
 
         #[test]
         fn identifier_distance_from_zero_to_single_bit_on_is_single_bit_on() {
             IdentifierSize::values().for_each(|size| {
-                let zero = zero_id(size);
-                let max_distance: usize = size.into();
+                let zero = zero_id(*size);
+                let max_distance: usize = (*size).into();
                 size.as_range().for_each(|x| {
-                    let single_bit_id =
-                        bits_id(&size, BitVec::from_fn(size.into(), |index| index == max_distance - x));
+                    let single_bit_id = bits_id(
+                        *size,
+                        BitVec::from_fn(max_distance, |index| index == max_distance - x),
+                    );
                     assert_eq!(&zero ^ &single_bit_id, x);
                 });
             });
@@ -293,7 +291,7 @@ pub mod test {
         #[should_panic]
         fn identifier_xor_panics_when_size_different() {
             assert_ne!(
-                zero_id(&IdentifierSize::default()) ^ zero_id(&IdentifierSize::_384),
+                zero_id(IdentifierSize::default()) ^ zero_id(IdentifierSize::_384),
                 0
             )
         }

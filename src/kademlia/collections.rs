@@ -114,8 +114,8 @@ impl<T: PartialEq + Serialize + Clone + Identifiable> Identifiable for Table<T> 
         &self.id
     }
 
-    fn id_size(&self) -> &IdentifierSize {
-        &self.id.id_size()
+    fn id_size(&self) -> IdentifierSize {
+        self.id.id_size()
     }
 }
 #[cfg(test)]
@@ -193,12 +193,12 @@ mod test {
             id_size
                 .as_range()
                 .rev()
-                .map(move |x| bits_id(&id_size, BitVec::from_fn(len, |index| x - 1 == index)))
+                .map(move |x| bits_id(id_size, BitVec::from_fn(len, |index| x - 1 == index)))
         }
 
         fn table_with_one_per_bucket() -> Table<Identifier> {
             let id_size = IdentifierSize::default();
-            let mut table = Table::new(zero_id(&IdentifierSize::default()), (&id_size).into());
+            let mut table = Table::new(zero_id(IdentifierSize::default()), id_size.into());
 
             id_in_each_bucket(id_size).for_each(|id| table.insert(id));
             table
