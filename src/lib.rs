@@ -6,7 +6,7 @@
     async_await,
     proc_macro_hygiene
 )]
-#![feature(try_from, range_contains)]
+#![feature(range_contains)]
 extern crate openssl;
 #[macro_use]
 extern crate tarpc;

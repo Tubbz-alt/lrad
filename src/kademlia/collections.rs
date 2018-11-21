@@ -4,7 +4,7 @@ use super::*;
 use std::collections::BTreeMap;
 
 #[derive(Eq, PartialEq, Serialize, Deserialize, Clone)]
-pub struct Bucket<T: PartialEq> {
+pub struct Bucket<T: PartialEq = ContactInfo> {
     k: usize,
     vec: Vec<T>, // TODO: Use a stack-allocated LRU cache
 }
@@ -52,7 +52,7 @@ impl<T: PartialEq> Bucket<T> {
 }
 
 #[derive(Eq, PartialEq, Serialize, Deserialize, Clone)]
-pub struct Table<T: PartialEq + Serialize + Clone + Identifiable> {
+pub struct Table<T: PartialEq + Serialize + Clone + Identifiable = ContactInfo> {
     id: Identifier,
     k: usize, // As defined by Kademlia
     map: BTreeMap<usize, Bucket<T>>,
@@ -66,6 +66,10 @@ impl<T: PartialEq + Serialize + Clone + Identifiable> Table<T> {
             k,
             map: BTreeMap::new(),
         }
+    }
+
+    pub fn k(&self) -> usize {
+        self.k
     }
 
     pub fn k_closest(&self) -> impl Iterator<Item = &T> {

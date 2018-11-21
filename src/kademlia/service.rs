@@ -1,7 +1,7 @@
 use super::*;
 service! {
-    rpc ping(client_id: NodeIdentity, magic_cookie: Identifier) -> (NodeIdentity, Identifier);
-    rpc store(data_id: Identifier, data: Vec<u8>, magic_cookie: Identifier) -> Identifier;
-    rpc find_node(id_to_find: Identifier, magic_cookie: Identifier) -> (Identifier, Vec<ContactInfo>);
-    rpc find_value(value_to_find: Identifier, magic_cookie: Identifier) -> (Identifier, WhoHasIt);
+    rpc ping(magic_cookie: Identifier, client_id: NodeIdentity) -> (Identifier, NodeIdentity);
+    rpc store(magic_cookie: Identifier, data_id: Identifier, data: Vec<u8>) -> Identifier;
+    rpc find_node(magic_cookie: Identifier, id_to_find: Identifier) -> (Identifier, Vec<ContactInfo>);
+    rpc find_value(magic_cookie: Identifier, value_to_find: Identifier) -> (Identifier, WhoHasIt);
 }

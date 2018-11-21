@@ -280,10 +280,11 @@ pub mod test {
         fn identifier_distance_from_zero_to_single_bit_on_is_single_bit_on() {
             IdentifierSize::values().for_each(|size| {
                 let zero = zero_id(size);
+                let max_distance: usize = size.into();
                 size.as_range().for_each(|x| {
                     let single_bit_id =
-                        bits_id(&size, BitVec::from_fn(size.into(), |index| index != x));
-                    assert_eq!(&zero ^ &single_bit_id, x);
+                        bits_id(&size, BitVec::from_fn(size.into(), |index| index == x - 1));
+                    assert_eq!(&zero ^ &single_bit_id, max_distance - x + 1);
                 });
             });
         }

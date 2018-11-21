@@ -5,8 +5,7 @@ use futures::{
 };
 use openssl::{ec, error::ErrorStack, nid::Nid, pkey, rand, sha};
 use serde::Serialize;
-use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::{Arc, RwLock};
@@ -111,8 +110,8 @@ impl NodeClient {
         let identity = self.node.read().unwrap().who_am_i.node_identity();
         let magic_cookie = Identifier::magic_cookie(&self.node.read().unwrap().id_size())?;
         let client = self.get_or_connect(socket_addr)?;
-        let ping_fut = client.ping(context::current(), identity.clone(), magic_cookie.clone());
-        Self::block_on(ping_fut).and_then(|(responder_identity, responder_magic_cookie)| {
+        let ping_fut = client.ping(context::current(), magic_cookie.clone(), identity.clone());
+        Self::block_on(ping_fut).and_then(|(responder_magic_cookie, responder_identity)| {
             if magic_cookie == responder_magic_cookie {
                 Ok(Some(responder_identity))
             } else {
@@ -121,7 +120,61 @@ impl NodeClient {
         })
     }
 
-    fn find_node(&mut self, identifier: &Identifier) {}
+    fn find_node(&mut self, identifier: &Identifier) -> io::Result<Option<ContactInfo>> {
+        let k = self.node.read().unwrap().table.k();
+        let mut table: Table<ContactInfo> = Table::new(identifier.clone(), k);
+        self.node
+            .read()
+            .unwrap()
+            .table
+            .k_closest_to(identifier)
+            .map(Clone::clone)
+            .for_each(|contact| table.insert(contact));
+        let mut queried: HashSet<SocketAddr> = HashSet::new();
+        loop {
+            let k_closest: Vec<ContactInfo> = table
+                .k_closest()
+                .filter(|contact| !queried.contains(&contact.address))
+                .map(Clone::clone)
+                .collect();
+            if k_closest.len() == 0
+            {
+                return Ok(table.k_closest()
+                    .find(|x| x.id() == identifier)
+                    .map(Clone::clone));
+            }
+            for k_contact in k_closest {
+                queried.insert(k_contact.address);
+                let magic_cookie = Identifier::magic_cookie(&self.node.read().unwrap().id_size())?;
+                let client = self.get_or_connect(&k_contact.address)?;
+                let find_node_fut =
+                    client.find_node(context::current(), magic_cookie.clone(), identifier.clone());
+                let new_contacts = Self::block_on(find_node_fut).and_then(
+                    |(responder_magic_cookie, responder_contacts)| {
+                        if magic_cookie == responder_magic_cookie {
+                            Ok(Some(responder_contacts))
+                        } else {
+                            Ok(None)
+                        }
+                    },
+                )?;
+                match new_contacts {
+                    Some(new_contacts) => {
+                        let mut node = self.node.write().unwrap();
+                        new_contacts.iter().for_each(|new_contact| {
+                            table.insert(new_contact.clone());
+                            node.table.insert(new_contact.clone());
+                        });
+                    }
+                    None => {}
+                };
+            }
+        }
+    }
+
+    fn find_value(&mut self, identifier: &Identifier) {}
+
+    fn store(&mut self, identifier: &Identifier) {}
 }
 pub enum BootstrapMethod<'a> {
     SrvRecord(&'a str),
@@ -177,8 +230,8 @@ impl NodeService {
                         }
                     })
                     .collect())
-            },
-            _ => panic!("Unimplemented Bootstrap method!")
+            }
+            _ => panic!("Unimplemented Bootstrap method!"),
         }
     }
 
@@ -204,7 +257,7 @@ impl NodeService {
 }
 
 impl self::service::Service for NodeService {
-    type PingFut = Ready<(NodeIdentity, Identifier)>;
+    type PingFut = Ready<(Identifier, NodeIdentity)>;
     type StoreFut = Ready<Identifier>;
     type FindNodeFut = Ready<(Identifier, Vec<ContactInfo>)>;
     type FindValueFut = Ready<(Identifier, WhoHasIt)>;
@@ -212,21 +265,21 @@ impl self::service::Service for NodeService {
     fn ping(
         self,
         _: context::Context,
-        client_id: NodeIdentity,
         magic_cookie: Identifier,
+        client_id: NodeIdentity,
     ) -> Self::PingFut {
         future::ready((
-            self.node.read().unwrap().who_am_i.node_identity(),
             magic_cookie,
+            self.node.read().unwrap().who_am_i.node_identity(),
         ))
     }
 
     fn store(
         self,
         _: context::Context,
+        magic_cookie: Identifier,
         data_id: Identifier,
         data: Vec<u8>,
-        magic_cookie: Identifier,
     ) -> Self::StoreFut {
         // TODO: add storage
         future::ready(magic_cookie)
@@ -235,8 +288,8 @@ impl self::service::Service for NodeService {
     fn find_node(
         self,
         _: context::Context,
-        id_to_find: Identifier,
         magic_cookie: Identifier,
+        id_to_find: Identifier,
     ) -> Self::FindNodeFut {
         future::ready((
             magic_cookie,
@@ -253,8 +306,8 @@ impl self::service::Service for NodeService {
     fn find_value(
         self,
         _: context::Context,
-        value_to_find: Identifier,
         magic_cookie: Identifier,
+        value_to_find: Identifier,
     ) -> Self::FindValueFut {
         // TODO: add storage
         future::ready((
