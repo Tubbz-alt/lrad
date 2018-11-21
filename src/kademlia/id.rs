@@ -283,8 +283,8 @@ pub mod test {
                 let max_distance: usize = size.into();
                 size.as_range().for_each(|x| {
                     let single_bit_id =
-                        bits_id(&size, BitVec::from_fn(size.into(), |index| index == x - 1));
-                    assert_eq!(&zero ^ &single_bit_id, max_distance - x + 1);
+                        bits_id(&size, BitVec::from_fn(size.into(), |index| index == max_distance - x));
+                    assert_eq!(&zero ^ &single_bit_id, x);
                 });
             });
         }
