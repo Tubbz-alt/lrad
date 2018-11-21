@@ -15,7 +15,7 @@ use tarpc::{
     context,
     server::{self, Handler},
 };
-use tokio::runtime::current_thread::Runtime;
+use tokio::runtime;
 use trust_dns_proto::rr::{domain::TryParseIp, record_data::RData};
 use trust_dns_resolver::{
     config::{ResolverConfig, ResolverOpts},
@@ -32,16 +32,14 @@ pub use self::id::{ContactInfo, Identifiable, Identifier, IdentifierSize, NodeId
 
 #[derive(Eq, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Node {
-    alpha: usize,
     who_am_i: ContactInfo,
     table: Table<ContactInfo>,
 }
 
 impl Node {
-    pub fn new(k: usize, alpha: usize, who_am_i: ContactInfo) -> Self {
+    pub fn new(k: usize, who_am_i: ContactInfo) -> Self {
         let id = who_am_i.id().clone();
         Self {
-            alpha,
             who_am_i,
             table: Table::new(id, k),
         }
@@ -68,27 +66,28 @@ pub struct NodeService {
     node: Arc<RwLock<Node>>,
 }
 
-#[derive(Clone)]
 pub struct NodeClient {
     node: Arc<RwLock<Node>>,
     tarpc_clients: HashMap<SocketAddr, service::Client>,
 }
 
-impl From<Arc<RwLock<Node>>> for NodeClient {
-    fn from(node: Arc<RwLock<Node>>) -> Self {
-        Self {
+impl NodeClient {
+    fn try_new(alpha: usize, node: Arc<RwLock<Node>>) -> tokio::io::Result<Self> {
+        Ok(Self {
             node,
             tarpc_clients: HashMap::new(),
-        }
+            // runtime: runtime::Builder::new().core_threads(alpha).build()?, TODO: actually use alpha to concurrently ping
+        })
     }
 }
 
 impl NodeClient {
     fn block_on<F, T>(future03: F) -> io::Result<T>
     where
-        F: futures::Future<Output = io::Result<T>>,
+        F: futures::Future<Output = io::Result<T>> + Send,
+        T: Send,
     {
-        let mut io_loop = Runtime::new()?;
+        let mut io_loop = runtime::current_thread::Runtime::new()?;
         io_loop.block_on(future03.boxed().compat())
     }
 
@@ -109,20 +108,25 @@ impl NodeClient {
     }
 
     fn ping(&mut self, socket_addr: &SocketAddr) -> io::Result<Option<NodeIdentity>> {
-        let magic_cookie = Identifier::magic_cookie(&self.node.read().unwrap().id_size())?;
         let identity = self.node.read().unwrap().who_am_i.node_identity();
+        let magic_cookie = Identifier::magic_cookie(&self.node.read().unwrap().id_size())?;
         let client = self.get_or_connect(socket_addr)?;
-        let res = Self::block_on(client.ping(context::current(), identity, magic_cookie.clone()))?;
-        if magic_cookie == res.1 {
-            Ok(Some(res.0))
-        } else {
-            Ok(None)
-        }
+        let ping_fut = client.ping(context::current(), identity.clone(), magic_cookie.clone());
+        Self::block_on(ping_fut).and_then(|(responder_identity, responder_magic_cookie)| {
+            if magic_cookie == responder_magic_cookie {
+                Ok(Some(responder_identity))
+            } else {
+                Ok(None)
+            }
+        })
     }
+
+    fn find_node(&mut self, identifier: &Identifier) {}
 }
 pub enum BootstrapMethod<'a> {
     SrvRecord(&'a str),
     SocketAddr(Vec<SocketAddr>),
+    Mdns(&'a str),
 }
 
 impl From<Arc<RwLock<Node>>> for NodeService {
@@ -173,7 +177,8 @@ impl NodeService {
                         }
                     })
                     .collect())
-            }
+            },
+            _ => panic!("Unimplemented Bootstrap method!")
         }
     }
 

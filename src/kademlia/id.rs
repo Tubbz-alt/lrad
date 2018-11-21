@@ -173,6 +173,7 @@ impl NodeIdentity {
         ec::EcGroup::from_curve_name(Self::close_ec(id_size))
     }
 
+    // TODO: Use SHAKE [once supported](https://github.com/sfackler/rust-openssl/issues/1017)
     fn hash(&self) -> Vec<u8> {
         let bytes_to_hash = self.public_key.as_slice();
         match self.id_size {
