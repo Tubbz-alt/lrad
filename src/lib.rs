@@ -14,6 +14,7 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate bit_vec;
+extern crate chrono;
 extern crate futures;
 extern crate mdns;
 extern crate tarpc_bincode_transport;
@@ -26,6 +27,7 @@ const BIND_PORT: usize = 16840;
 const SRV_RECORD: &str = "_lrad._tcp.spuri.io";
 
 mod kademlia;
+mod vcs;
 
 #[cfg(test)]
 mod tests {

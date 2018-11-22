@@ -32,3 +32,4 @@ tarpc-bincode-transport = "0.3"
 trust-dns-proto = "0.5"
 tokio = "0.1 "
 mdns = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
