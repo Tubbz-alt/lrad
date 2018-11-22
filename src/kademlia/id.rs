@@ -30,6 +30,7 @@ impl IdentifierSize {
 
     pub fn hash(self, data: &[u8]) -> Identifier {
         // TODO: Use SHAKE [once supported](https://github.com/sfackler/rust-openssl/issues/1017)
+        // This actually might not be possible b/c [OpenSSL doesn't have support for shake digest yet](https://www.openssl.org/docs/manmaster/man3/EVP_DigestSignInit.html)
         Identifier {
             size: self,
             bits: BitVec::from_bytes(
