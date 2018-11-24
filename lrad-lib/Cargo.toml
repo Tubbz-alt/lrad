@@ -1,0 +1,34 @@
+[package]
+name = "lrad"
+version = "0.1.0"
+authors = ["Sameer Puri <purisame@spuri.io>"]
+edition = "2018"
+description = "An update framework for applications running on hobbyist single-board-computers (CS5285 Final Project)"
+homepage = "https://github.com/sameer/lrad"
+repository = "https://github.com/sameer/lrad"
+license = "MIT"
+include = [
+    "**/*.rs",
+    "Cargo.toml",
+    "**/*.toml",
+]
+
+[badges]
+travis-ci = { repository = "https://github.com/sameer/lrad", branch = "master" }
+is-it-maintained-issue-resolution = { repository = "https://github.com/sameer/lrad" }
+is-it-maintained-open-issues = { repository = "https://github.com/sameer/lrad" }
+maintenance = { status = "passively-maintained" }
+
+[dependencies]
+# openssl = "0.10"
+serde = "1.0"
+serde_derive = "1.0"
+# trust-dns-resolver = { version = "0.10", features = ["dns-over-openssl"] }
+# trust-dns-proto = "0.5"
+chrono = { version = "0.4", features = ["serde"] }
+lazy_static = "*"
+toml = "0.4"
+git2 = "0.7"
+tempfile = "3.0"
+curl = "0.4"
+serde_json = "1.0"

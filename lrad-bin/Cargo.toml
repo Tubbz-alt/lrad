@@ -1,0 +1,9 @@
+[package]
+name = "lrad-bin"
+version = "0.1.0"
+authors = ["Sameer purisame@spuri.io"]
+edition = "2018"
+
+[dependencies]
+lrad = { version = "0.1", path = "../lrad-lib" }
+clap = "2.32"
