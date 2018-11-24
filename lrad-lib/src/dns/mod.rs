@@ -5,9 +5,7 @@ pub use self::cloudflare::*;
 
 pub trait DnsRecordPutter {
     fn try_put_txt_record(
-        &mut self,
-        name: String,
+        &self,
         ipfs_cid: String,
-        ttl: Option<usize>,
     ) -> Result<bool>;
 }

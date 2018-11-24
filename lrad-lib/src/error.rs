@@ -6,6 +6,7 @@ use serde_json::Error as SerdeJsonError;
 use std::io::Error as IoError;
 use toml::de::Error as TomlDeError;
 use toml::ser::Error as TomlSerError;
+use std::str::Utf8Error;
 
 #[derive(Debug)]
 pub enum ErrorKind {
@@ -19,7 +20,7 @@ pub enum ErrorKind {
     CurlFormError(CurlFormError),
     EnvironmentVariableNotFound(String),
     SerdeJsonError(SerdeJsonError),
-    UnicodeError,
+    Utf8Error(Utf8Error)
 }
 
 pub type Error = Box<ErrorKind>;
@@ -77,5 +78,11 @@ impl From<CurlFormError> for Error {
 impl From<SerdeJsonError> for Error {
     fn from(err: SerdeJsonError) -> Self {
         Box::new(ErrorKind::SerdeJsonError(err))
+    }
+}
+
+impl From<Utf8Error> for Error {
+    fn from(err: Utf8Error) -> Self {
+        Box::new(ErrorKind::Utf8Error(err))
     }
 }

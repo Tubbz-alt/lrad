@@ -1,4 +1,5 @@
 use crate::dns::CloudflareConfig;
+use crate::ipfs::IpfsApiServerConfig;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -7,9 +8,10 @@ use git2::Repository;
 
 use crate::error::Result;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Default)]
 pub struct Config {
-    dns_provider: CloudflareConfig,
+    pub dns_provider: CloudflareConfig,
+    pub ipfs_api_server: IpfsApiServerConfig,
 }
 
 impl Config {
@@ -38,13 +40,5 @@ impl Config {
         let mut file = File::create(Self::config_path(repo)?)?;
         file.write(config_json_str.as_bytes())?;
         Ok(())
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            dns_provider: CloudflareConfig::default(),
-        }
     }
 }
