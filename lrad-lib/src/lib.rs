@@ -72,9 +72,18 @@ impl Lrad {
         let mut bare_repo_path = PathBuf::from(tmp_dir.path());
         bare_repo_path.push(repo_path.file_name().unwrap());
         let bare_repo = vcs::clone_bare(repo_path.to_str().unwrap(), &bare_repo_path)?;
-        Command::new("git").arg("update-server-info").current_dir(&bare_repo_path).output()?;
+        for remote in bare_repo.remotes()?.iter() {
+            if remote.is_some() {
+                bare_repo.remote_delete(&remote.unwrap())?;
+            }
+        }
+        Command::new("git")
+            .arg("update-server-info")
+            .current_dir(&bare_repo_path)
+            .output()?;
         info!("Adding to IPFS...");
-        let ipfs_add_all = ipfs::IpfsAddRecursive::new(&self.config.ipfs_api_server, &bare_repo_path);
+        let ipfs_add_all =
+            ipfs::IpfsAddRecursive::new(&self.config.ipfs_api_server, &bare_repo_path);
         let ipfs_add_response = ipfs_add_all.run()?;
         let root = ipfs_add_response
             .iter()
@@ -82,7 +91,9 @@ impl Lrad {
             .unwrap();
         info!("Added to IPFS with hash {}", root.hash);
         info!("Updating Cloudflare DNS Record...");
-        self.config.dns_provider.try_put_txt_record(root.hash.clone())?;
+        self.config
+            .dns_provider
+            .try_put_txt_record(root.hash.clone())?;
         Ok(())
     }
 }

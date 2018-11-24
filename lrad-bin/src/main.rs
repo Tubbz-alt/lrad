@@ -13,10 +13,7 @@ use std::env;
 fn main() -> Result<()> {
     dotenv::dotenv();
     if env::var("RUST_LOG").is_err() {
-        env::set_var(
-            "RUST_LOG",
-            "lrad=info",
-        );
+        env::set_var("RUST_LOG", "lrad=info");
     }
     env_logger::init();
     let matches = clap_app!(LRAD =>

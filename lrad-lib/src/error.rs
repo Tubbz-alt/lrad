@@ -4,9 +4,9 @@ use curl::{Error as CurlError, FormError as CurlFormError};
 use git2::Error as Git2Error;
 use serde_json::Error as SerdeJsonError;
 use std::io::Error as IoError;
+use std::str::Utf8Error;
 use toml::de::Error as TomlDeError;
 use toml::ser::Error as TomlSerError;
-use std::str::Utf8Error;
 
 #[derive(Debug)]
 pub enum ErrorKind {
@@ -20,7 +20,7 @@ pub enum ErrorKind {
     CurlFormError(CurlFormError),
     EnvironmentVariableNotFound(String),
     SerdeJsonError(SerdeJsonError),
-    Utf8Error(Utf8Error)
+    Utf8Error(Utf8Error),
 }
 
 pub type Error = Box<ErrorKind>;
