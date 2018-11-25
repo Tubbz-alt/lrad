@@ -34,4 +34,9 @@ addons:
       - cmake
       - gcc
 after_success:
-  - cargo run -- deploy
+  - openssl enc -pbkdf2 -aes-256-cbc -pass 'env:IPFS_OPENSSL_AES_KEY' -d -in ./ipfs_ssh_key.enc -out /tmp/ipfs_ssh_key
+  - eval "$(ssh-agent -s)"
+  - chmod 600 /tmp/ipfs_ssh_key
+  - ssh-add /tmp/ipfs_ssh_key
+  - ./test/ipfs_deploy.sh
+  

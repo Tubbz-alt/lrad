@@ -12,7 +12,8 @@ use std::env;
 
 fn main() -> Result<()> {
     if dotenv::dotenv().is_ok() {
-        info!("A .env file was found and environment variables were loaded from it. If you we");
+        // TODO: Add a config option for this
+        info!("A .env file was found and environment variables were loaded from it. If you do not want this behavior, change it in the config file.");
     }
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "lrad=info");

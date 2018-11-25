@@ -107,7 +107,6 @@ impl DnsRecordPutter for CloudflareConfig {
             handle.url_encode(zone_id.1.as_bytes()),
             handle.url_encode(dns_record_id.1.as_bytes())
         );
-        debug!("URL is {}", url);
         handle.put(true)?;
         handle.url(url.as_str())?;
         let mut headers_list = List::new();
@@ -123,10 +122,6 @@ impl DnsRecordPutter for CloudflareConfig {
         {
             let mut transfer = handle.transfer();
             transfer.read_function(move |into| {
-                debug!(
-                    "Record json is {}",
-                    serde_json::to_string(&record).map_err(|_| ReadError::Abort)?
-                );
                 record_json_mut.read(into).map_err(|_| ReadError::Abort)
             })?;
             transfer.write_function(|data| {
