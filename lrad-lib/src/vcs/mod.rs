@@ -9,4 +9,6 @@ pub fn clone_bare(url: &str, into: &Path) -> Result<Repository, git2::Error> {
 pub enum VcsError {
     RepoShouldNotBeBare,
     RepoNotClean,
+    RepoHasConflicts,
+    RepoHasUnstagedChanges,
 }

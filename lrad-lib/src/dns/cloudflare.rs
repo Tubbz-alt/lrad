@@ -169,23 +169,3 @@ impl DnsLinkTxtRecord {
 struct DnsRecordResponse {
     success: bool,
 }
-
-//                 let resolver =
-//                     Resolver::new(ResolverConfig::cloudflare_tls(), ResolverOpts::default())?;
-//                 let srv_records = resolver.lookup_srv(srv_record_name)?;
-//                 Ok(srv_records
-//                     .iter()
-//                     .filter_map(move |srv_record| {
-//                         let target = srv_record.target().try_parse_ip()?;
-//                         let port = srv_record.port();
-//                         match target {
-//                             RData::A(ip_v4_addr) => {
-//                                 Some(SocketAddr::V4(SocketAddrV4::new(ip_v4_addr, port)))
-//                             }
-//                             RData::AAAA(ip_v6_addr) => {
-//                                 Some(SocketAddr::V6(SocketAddrV6::new(ip_v6_addr, port, 0, 0)))
-//                             }
-//                             _ => None,
-//                         }
-//                     })
-// .collect())

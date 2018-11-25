@@ -23,8 +23,8 @@ maintenance = { status = "passively-maintained" }
 # openssl = "0.10"
 serde = "1.0"
 serde_derive = "1.0"
-# trust-dns-resolver = { version = "0.10", features = ["dns-over-openssl"] }
-# trust-dns-proto = "0.5"
+trust-dns-resolver = { version = "0.10", features = ["dns-over-openssl"] }
+trust-dns-proto = "0.5"
 chrono = { version = "0.4", features = ["serde"] }
 lazy_static = "*"
 toml = "0.4"

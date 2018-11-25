@@ -33,3 +33,5 @@ addons:
       - binutils-dev
       - cmake
       - gcc
+after_success:
+  - cargo run -- deploy

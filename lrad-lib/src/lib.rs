@@ -8,8 +8,8 @@ extern crate chrono;
 extern crate git2;
 extern crate tempfile;
 extern crate toml;
-// extern crate trust_dns_proto;
-// extern crate trust_dns_resolver;
+extern crate trust_dns_proto;
+extern crate trust_dns_resolver;
 #[macro_use]
 extern crate lazy_static;
 extern crate curl;
@@ -18,7 +18,7 @@ extern crate serde_json;
 extern crate log;
 
 use crate::dns::DnsRecordPutter;
-use git2::{Repository, RepositoryState};
+use git2::{DiffOptions, Repository, RepositoryState};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
@@ -39,16 +39,16 @@ mod tests {
     }
 }
 
-pub struct Lrad {
+pub struct LradCli {
     repo: Repository,
     config: config::Config,
 }
 
-impl Lrad {
+impl LradCli {
     pub fn try_load(path: &Path) -> Result<Self> {
         let repo = Repository::discover(path)?;
         let config = config::Config::try_from(&repo)?;
-        Ok(Lrad { repo, config })
+        Ok(LradCli { repo, config })
     }
 
     pub fn try_init(path: &Path) -> Result<Self> {
@@ -57,7 +57,10 @@ impl Lrad {
         debug!("Found repo at {:#?}", repo.path());
         let config = config::Config::default();
         config.write(&repo)?;
-        Ok(Lrad { repo, config })
+        if !repo.status_should_ignore(Path::new(".env"))? {
+            warn!("The .env file may accidentally be committed! Please add it to your .gitignore if you plan on using it to store secrets.");
+        }
+        Ok(LradCli { repo, config })
     }
 
     pub fn try_deploy(&self) -> Result<()> {
@@ -66,12 +69,29 @@ impl Lrad {
         } else if self.repo.is_bare() {
             return Err(vcs::VcsError::RepoShouldNotBeBare.into());
         }
+        let index = self.repo.index()?;
+        if index.has_conflicts() {
+            return Err(vcs::VcsError::RepoHasConflicts.into());
+        } else if self
+            .repo
+            .diff_index_to_workdir(
+                Some(&index),
+                Some(DiffOptions::default().ignore_submodules(true)),
+            )?
+            .stats()?
+            .files_changed()
+            != 0
+        {
+            return Err(vcs::VcsError::RepoHasUnstagedChanges.into());
+        }
+        debug!("Repo is clean, good to go!");
         info!("Converting to bare repo...");
         let tmp_dir = TempDir::new()?;
         let repo_path = self.repo.path().parent().unwrap();
         let mut bare_repo_path = PathBuf::from(tmp_dir.path());
         bare_repo_path.push(repo_path.file_name().unwrap());
         let bare_repo = vcs::clone_bare(repo_path.to_str().unwrap(), &bare_repo_path)?;
+        debug!("Stripping remotes from bare repo.");
         for remote in bare_repo.remotes()?.iter() {
             if remote.is_some() {
                 bare_repo.remote_delete(&remote.unwrap())?;
@@ -96,4 +116,8 @@ impl Lrad {
             .try_put_txt_record(root.hash.clone())?;
         Ok(())
     }
+}
+
+pub struct LradDaemon {
+    domain_name: String,
 }

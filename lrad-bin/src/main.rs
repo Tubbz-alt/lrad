@@ -6,12 +6,14 @@ extern crate log;
 extern crate dotenv;
 extern crate env_logger;
 
-use lrad::{error::Result, Lrad};
+use lrad::{error::Result, LradCli};
 
 use std::env;
 
 fn main() -> Result<()> {
-    dotenv::dotenv();
+    if dotenv::dotenv().is_ok() {
+        info!("A .env file was found and environment variables were loaded from it. If you we");
+    }
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "lrad=info");
     }
@@ -27,15 +29,18 @@ fn main() -> Result<()> {
         (@subcommand deploy =>
             (about: "Adds this git repo to IPFS and updates the DNS link record in Cloudflare.")
         )
+        (@subcommand daemon =>
+            (about: "Starts daemon to deploy packages with")
+        )
     )
     .get_matches();
     if let Some(_matches) = matches.subcommand_matches("init") {
         let current_dir = env::current_dir()?;
-        let lrad = Lrad::try_init(&current_dir)?;
+        let lrad = LradCli::try_init(&current_dir)?;
         info!("Successfully initialized! Please make sure to store any secrets securely.");
     } else if let Some(_matches) = matches.subcommand_matches("deploy") {
         let current_dir = env::current_dir()?;
-        let lrad = Lrad::try_load(&current_dir)?;
+        let lrad = LradCli::try_load(&current_dir)?;
         lrad.try_deploy()?;
         info!("Successfully deployed!");
     }
