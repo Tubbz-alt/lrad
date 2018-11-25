@@ -5,7 +5,7 @@ set -e # halt script on error
 wget -qO- https://dist.ipfs.io/go-ipfs/v0.4.17/go-ipfs_v0.4.17_linux-amd64.tar.gz | tar xz
 PATH=./go-ipfs/:$PATH
 # open tunnel to ipfs node
-ssh -p $IPFS_SSH_PORT -N -L 5001:localhost:5001 $IPFS_SERVER_ADDRESS &
+ssh -p $IPFS_SSH_PORT -N -L 5001:localhost:5001 $IPFS_SSH_DESTINATION &
 # wait for some time for the tunnel to be established
 sleep 10
 

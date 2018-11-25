@@ -1,5 +1,5 @@
 sudo: true
-dist: trusty
+dist: xenial
 language: rust
 matrix:
   include:
@@ -20,6 +20,7 @@ cache:
   timeout: 360
 before_cache:
   - chmod -R a+r $HOME/.cargo
+  - rm -r target/cov
 env:
   global:
   - OPENSSL_DIR=$HOME/openssl-1.1.1
@@ -34,7 +35,8 @@ addons:
       - cmake
       - gcc
 after_success:
-  - openssl enc -pbkdf2 -aes-256-cbc -pass 'env:IPFS_OPENSSL_AES_KEY' -d -in ./ipfs_ssh_key.enc -out /tmp/ipfs_ssh_key
+  - echo $IPFS_SSH_HOST_KEY >> ~/.ssh/known_hosts  
+  - OPENSSL_DIR/bin/openssl enc -pbkdf2 -aes-256-cbc -pass 'env:IPFS_OPENSSL_AES_KEY' -d -in ./ipfs_ssh_key.enc -out /tmp/ipfs_ssh_key
   - eval "$(ssh-agent -s)"
   - chmod 600 /tmp/ipfs_ssh_key
   - ssh-add /tmp/ipfs_ssh_key
