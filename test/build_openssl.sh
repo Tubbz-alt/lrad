@@ -15,5 +15,4 @@ tar xzf /tmp/build/openssl.tar.gz && cd openssl-1.1.1
 ./Configure --prefix=${OPENSSL_DIR} --openssldir=${OPENSSL_DIR} linux-x86_64 -fPIC -g no-shared
 make -j$(nproc)
 make install
-rm -r /tmp/build/
 cd ~/build/sameer/lrad
