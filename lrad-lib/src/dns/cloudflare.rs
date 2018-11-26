@@ -4,6 +4,7 @@ use crate::error::{ErrorKind, Result};
 use std::env;
 use std::io::Read;
 use std::ops::Range;
+use std::sync::mpsc;
 
 use actix_web::client;
 use actix_web::dev::JsonBody;
@@ -103,7 +104,7 @@ impl DnsRecordPutter for CloudflareConfig {
         let dns_record_ttl = self.dns_record_ttl.unwrap_or_default().0;
         if dns_record_ttl != 1 && !VALID_TTL_RANGE.contains(&dns_record_ttl) {
             // TODO: Actually handle this
-            panic!(format!("Invalid TTL: {}", dns_record_ttl));
+            panic!("Invalid TTL: {}", dns_record_ttl);
         }
         debug!("Building actix-web request");
         let url = format!(
@@ -112,15 +113,31 @@ impl DnsRecordPutter for CloudflareConfig {
         );
         let record =
             DnsLinkTxtRecord::new(dns_record_name.1.clone(), ipfs_cid.clone(), dns_record_ttl);
-        let client = client::put(url)
-            .header("X-Auth-Email", cf_email_address.1)
-            .header("X-Auth-Key", cf_api_key.1)
-            .content_type("application/json")
-            .json(record)?;
-        debug!("Parsing CF put response...");
-        let res: DnsRecordResponse = client.send().wait()?.json().wait()?;
+        debug!("Sending CF put request...");
+        let (tx, rx) = mpsc::channel();
+        actix::run(|| {
+            client::put(url)
+                .header("X-Auth-Email", cf_email_address.1)
+                .header("X-Auth-Key", cf_api_key.1)
+                .content_type("application/json")
+                .json(record)
+                .unwrap()
+                .send()
+                .map_err(|_| ())
+                .and_then(|res| {
+                    debug!("Parsing CF put response...");
+                    res.json().map_err(|_| ())
+                })
+                .and_then(move |json: DnsRecordResponse| {
+                    debug!("Moving CF put response...");
+                    tx.send(json.clone()).unwrap();
+                    actix::System::current().stop();
+                    Ok(())
+                })
+        });
         debug!("Done sending CF");
-        Ok(res.success)
+        let response = rx.recv().unwrap();
+        Ok(response.success)
     }
 }
 
@@ -146,7 +163,7 @@ impl DnsLinkTxtRecord {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct DnsRecordResponse {
     success: bool,
 }
