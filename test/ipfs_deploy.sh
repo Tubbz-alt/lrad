@@ -10,7 +10,7 @@ ssh -p $IPFS_SSH_PORT -N -L 5001:127.0.0.1:5001 $IPFS_SSH_DESTINATION &
 sleep 10
 
 if [ "$TRAVIS_BRANCH" = "master" -a "$TRAVIS_PULL_REQUEST" = "false" ]; then
-    cargo run -- deploy
+    RUST_LOG=lrad=debug cargo run -- deploy
 else
     echo "Not on master, won't send to git."
     exit 0

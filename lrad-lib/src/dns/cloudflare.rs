@@ -73,6 +73,7 @@ pub struct CloudflareConfig {
 
 impl DnsRecordPutter for CloudflareConfig {
     fn try_put_txt_record(&self, ipfs_cid: String) -> Result<bool> {
+        debug!("Reading environment variables");
         let cf_email_address = env::vars()
             .find(|x| x.0 == self.email_env_var.0)
             .ok_or_else(|| ErrorKind::EnvironmentVariableNotFound(self.email_env_var.0.clone()))?;
@@ -101,6 +102,7 @@ impl DnsRecordPutter for CloudflareConfig {
             // TODO: Actually handle this
             panic!(format!("Invalid TTL: {}", dns_record_ttl));
         }
+        debug!("Building cURL request");
         let mut handle = Easy::new();
         let url = format!(
             "https://api.cloudflare.com/client/v4/zones/{}/dns_records/{}",
@@ -109,11 +111,13 @@ impl DnsRecordPutter for CloudflareConfig {
         );
         handle.put(true)?;
         handle.url(url.as_str())?;
+        debug!("Adding headers");
         let mut headers_list = List::new();
         headers_list.append(format!("X-Auth-Email: {}", cf_email_address.1).as_str())?;
         headers_list.append(format!("X-Auth-Key: {}", cf_api_key.1).as_str())?;
         headers_list.append("Content-Type: application/json")?;
         handle.http_headers(headers_list)?;
+        debug!("Preparing read/write function data");
         let record =
             DnsLinkTxtRecord::new(dns_record_name.1.clone(), ipfs_cid.clone(), dns_record_ttl);
         let record_json = serde_json::to_vec(&record)?;

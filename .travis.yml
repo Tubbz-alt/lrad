@@ -8,7 +8,6 @@ script:
   - ./test/build_openssl.sh
   - ./test/build_kcov.sh
   - cargo update
-  - rm target/debug/lrad*
   - cargo build -v
   - cargo test --no-run
   - kcov --coveralls-id=$TRAVIS_JOB_ID --exclude-pattern=/.cargo --exclude-path=/usr target/cov `find target/debug/ -maxdepth 1 -executable -type f`
