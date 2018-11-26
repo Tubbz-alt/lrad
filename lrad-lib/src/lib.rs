@@ -12,10 +12,12 @@ extern crate trust_dns_proto;
 extern crate trust_dns_resolver;
 #[macro_use]
 extern crate lazy_static;
-extern crate curl;
+extern crate actix;
+extern crate actix_web;
 extern crate serde_json;
 #[macro_use]
 extern crate log;
+extern crate futures;
 
 use crate::dns::DnsRecordPutter;
 use git2::{DiffOptions, Repository, RepositoryState};

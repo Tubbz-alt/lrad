@@ -5,7 +5,10 @@ use std::env;
 use std::io::Read;
 use std::ops::Range;
 
-use curl::easy::{Easy, List, ReadError};
+use actix_web::client;
+use actix_web::dev::JsonBody;
+use actix_web::HttpMessage;
+use futures::prelude::*;
 
 #[derive(Deserialize, Serialize)]
 struct CloudflareApiKeyEnvVar(String);
@@ -102,43 +105,22 @@ impl DnsRecordPutter for CloudflareConfig {
             // TODO: Actually handle this
             panic!(format!("Invalid TTL: {}", dns_record_ttl));
         }
-        debug!("Building cURL request");
-        let mut handle = Easy::new();
+        debug!("Building actix-web request");
         let url = format!(
             "https://api.cloudflare.com/client/v4/zones/{}/dns_records/{}",
-            handle.url_encode(zone_id.1.as_bytes()),
-            handle.url_encode(dns_record_id.1.as_bytes())
+            zone_id.1, dns_record_id.1
         );
-        handle.put(true)?;
-        handle.url(url.as_str())?;
-        debug!("Adding headers");
-        let mut headers_list = List::new();
-        headers_list.append(format!("X-Auth-Email: {}", cf_email_address.1).as_str())?;
-        headers_list.append(format!("X-Auth-Key: {}", cf_api_key.1).as_str())?;
-        headers_list.append("Content-Type: application/json")?;
-        handle.http_headers(headers_list)?;
-        debug!("Preparing read/write function data");
         let record =
             DnsLinkTxtRecord::new(dns_record_name.1.clone(), ipfs_cid.clone(), dns_record_ttl);
-        let record_json = serde_json::to_vec(&record)?;
-        let mut record_json_mut = record_json.as_slice();
-        let mut dst = Vec::new();
-        {
-            let mut transfer = handle.transfer();
-            transfer.read_function(move |into| {
-                record_json_mut.read(into).map_err(|_| ReadError::Abort)
-            })?;
-            transfer.write_function(|data| {
-                dst.extend_from_slice(data);
-                Ok(data.len())
-            })?;
-            debug!("Sending CF put...");
-            transfer.perform()?;
-        }
+        let client = client::put(url)
+            .header("X-Auth-Email", cf_email_address.1)
+            .header("X-Auth-Key", cf_api_key.1)
+            .content_type("application/json")
+            .json(record)?;
         debug!("Parsing CF put response...");
-        let response: DnsRecordResponse = serde_json::from_slice(dst.as_slice())?;
+        let res: DnsRecordResponse = client.send().wait()?.json().wait()?;
         debug!("Done sending CF");
-        Ok(response.success)
+        Ok(res.success)
     }
 }
 

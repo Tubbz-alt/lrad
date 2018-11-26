@@ -7,6 +7,10 @@ use std::io::Error as IoError;
 use std::str::Utf8Error;
 use toml::de::Error as TomlDeError;
 use toml::ser::Error as TomlSerError;
+use actix_web::Error as ActixWebError;
+use actix_web::error::JsonPayloadError;
+use actix_web::client::SendRequestError;
+
 
 #[derive(Debug)]
 pub enum ErrorKind {
@@ -21,6 +25,9 @@ pub enum ErrorKind {
     EnvironmentVariableNotFound(String),
     SerdeJsonError(SerdeJsonError),
     Utf8Error(Utf8Error),
+    ActixWebError(ActixWebError),
+    JsonPayloadError(JsonPayloadError),
+    SendRequestError(SendRequestError),
 }
 
 pub type Error = Box<ErrorKind>;
@@ -84,5 +91,23 @@ impl From<SerdeJsonError> for Error {
 impl From<Utf8Error> for Error {
     fn from(err: Utf8Error) -> Self {
         Box::new(ErrorKind::Utf8Error(err))
+    }
+}
+
+impl From<ActixWebError> for Error {
+    fn from(err: ActixWebError) -> Self {
+        Box::new(ErrorKind::ActixWebError(err))
+    }
+}
+
+impl From<JsonPayloadError> for Error {
+    fn from(err: JsonPayloadError) -> Self {
+        Box::new(ErrorKind::JsonPayloadError(err))
+    }
+}
+
+impl From<SendRequestError> for Error {
+    fn from(err: SendRequestError) -> Self {
+        Box::new(ErrorKind::SendRequestError(err))
     }
 }
