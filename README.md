@@ -21,6 +21,7 @@ An update framework for applications running on hobbyist single-board-computers 
       - [ ] Size constraints
     - [ ] Add to IPFS
       - [x] Local IPFS API server
+        - [ ] Convert to actix-web client
       - [ ] Remote IPFS API server
         - [ ] SSH tunnel
         - [ ] Are there other ways to securely connect?
@@ -35,8 +36,8 @@ An update framework for applications running on hobbyist single-board-computers 
     - [ ] Linux
       - [ ] Systemd service
     - [ ] Windows (not for now)
-    - [ ] Update stages
-  - [x] DNS record polling
+    - [ ] Update stages (finite state machine)
+  - [x] DNS txt record polling
 
 ## Motivation
 

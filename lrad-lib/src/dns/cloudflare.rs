@@ -2,12 +2,10 @@ use crate::dns::DnsRecordPutter;
 use crate::error::{ErrorKind, Result};
 
 use std::env;
-use std::io::Read;
 use std::ops::Range;
 use std::sync::mpsc;
 
 use actix_web::client;
-use actix_web::dev::JsonBody;
 use actix_web::HttpMessage;
 use futures::prelude::*;
 
@@ -47,15 +45,6 @@ impl Default for CloudflareZoneIdEnvVar {
     }
 }
 
-#[derive(Deserialize, Serialize)]
-struct CloudflareDnsRecordNameEnvVar(String);
-
-impl Default for CloudflareDnsRecordNameEnvVar {
-    fn default() -> Self {
-        Self(String::from("CF_DNS_RECORD_NAME"))
-    }
-}
-
 #[derive(Deserialize, Serialize, Clone, Copy)]
 struct CloudflareDnsRecordTTL(u32);
 
@@ -71,7 +60,7 @@ pub struct CloudflareConfig {
     api_key_env_var: CloudflareApiKeyEnvVar,
     zone_id_env_var: CloudflareZoneIdEnvVar,
     dns_record_id_env_var: CloudflareDnsRecordIdEnvVar,
-    dns_record_name_env_var: CloudflareDnsRecordNameEnvVar,
+    dns_record_name: String,
     dns_record_ttl: Option<CloudflareDnsRecordTTL>,
 }
 
@@ -96,11 +85,7 @@ impl DnsRecordPutter for CloudflareConfig {
             .ok_or_else(|| {
                 ErrorKind::EnvironmentVariableNotFound(self.dns_record_id_env_var.0.clone())
             })?;
-        let dns_record_name = env::vars()
-            .find(|x| x.0 == self.dns_record_name_env_var.0)
-            .ok_or_else(|| {
-                ErrorKind::EnvironmentVariableNotFound(self.dns_record_name_env_var.0.clone())
-            })?;
+        let dns_record_name = self.dns_record_name;
         let dns_record_ttl = self.dns_record_ttl.unwrap_or_default().0;
         if dns_record_ttl != 1 && !VALID_TTL_RANGE.contains(&dns_record_ttl) {
             // TODO: Actually handle this

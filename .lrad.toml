@@ -3,7 +3,7 @@ email_env_var = "CF_EMAIL"
 api_key_env_var = "CF_API_KEY"
 zone_id_env_var = "CF_ZONE_ID"
 dns_record_id_env_var = "CF_DNS_RECORD_ID"
-dns_record_name_env_var = "CF_DNS_RECORD_NAME"
+dns_record_name = "_dnslink.git.lrad.io"
 
 [ipfs_api_server]
 host = "localhost"
