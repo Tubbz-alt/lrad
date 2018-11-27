@@ -3,7 +3,7 @@ use crate::error::{ErrorKind, Result};
 
 use std::env;
 use std::ops::Range;
-use std::sync::mpsc;
+use std::sync::{Arc, RwLock};
 
 use actix_web::client;
 use actix_web::HttpMessage;
@@ -85,7 +85,7 @@ impl DnsRecordPutter for CloudflareConfig {
             .ok_or_else(|| {
                 ErrorKind::EnvironmentVariableNotFound(self.dns_record_id_env_var.0.clone())
             })?;
-        let dns_record_name = self.dns_record_name;
+        let dns_record_name = self.dns_record_name.clone();
         let dns_record_ttl = self.dns_record_ttl.unwrap_or_default().0;
         if dns_record_ttl != 1 && !VALID_TTL_RANGE.contains(&dns_record_ttl) {
             // TODO: Actually handle this
@@ -97,9 +97,10 @@ impl DnsRecordPutter for CloudflareConfig {
             zone_id.1, dns_record_id.1
         );
         let record =
-            DnsLinkTxtRecord::new(dns_record_name.1.clone(), ipfs_cid.clone(), dns_record_ttl);
+            DnsLinkTxtRecord::new(dns_record_name.clone(), ipfs_cid.clone(), dns_record_ttl);
         debug!("Sending CF put request...");
-        let (tx, rx) = mpsc::channel();
+        let res = Arc::new(RwLock::new(None));
+        let tx = res.clone();
         actix::run(|| {
             client::put(url)
                 .header("X-Auth-Email", cf_email_address.1)
@@ -115,13 +116,13 @@ impl DnsRecordPutter for CloudflareConfig {
                 })
                 .and_then(move |json: DnsRecordResponse| {
                     debug!("Moving CF put response...");
-                    tx.send(json.clone()).unwrap();
+                    *tx.write().unwrap() = Some(json.clone());
                     actix::System::current().stop();
                     Ok(())
                 })
         });
         debug!("Done sending CF");
-        let response = rx.recv().unwrap();
+        let response = res.read().unwrap().clone().unwrap();
         Ok(response.success)
     }
 }
