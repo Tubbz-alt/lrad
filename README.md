@@ -9,14 +9,34 @@ An update framework for applications running on hobbyist single-board-computers 
 
 ## TODOs
 
-- [ ] Implement Kademlia
-  - [x] Bucket
-  - [x] Table
-  - [x] Node
-  - [x] Client
-  - [ ] Server
-- [ ] LRAD Proof of Concept / System Architecture
-- [ ] LRAD Architecture
+- [ ] LRAD User CLI Tool
+  - [ ] Init
+    - [x] Create config file
+    - [ ] Interactvie "wizard"
+  - [ ] Deploy
+    - [ ] Transform Git repo
+      - [x] Clone bare repository
+      - [ ] Unpack objects
+      - [x] update-server-info
+      - [ ] Size constraints
+    - [ ] Add to IPFS
+      - [x] Local IPFS API server
+      - [ ] Remote IPFS API server
+        - [ ] SSH tunnel
+        - [ ] Are there other ways to securely connect?
+    - [ ] Put DNS link record
+      - [x] Cloudflare
+      - [ ] AWS Route 53
+      - [ ] Namecheap
+      - [ ] Google DNS
+- [ ] LRAD SBC Daemon
+  - [ ] Init (how?)
+  - [ ] Update
+    - [ ] Linux
+      - [ ] Systemd service
+    - [ ] Windows (not for now)
+    - [ ] Update stages
+  - [x] DNS record polling
 
 ## Motivation
 
