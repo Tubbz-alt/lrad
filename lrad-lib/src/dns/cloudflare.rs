@@ -3,6 +3,7 @@ use crate::error::{BoxFuture, Error, ErrorKind};
 
 use std::env;
 use std::ops::Range;
+use std::sync::mpsc;
 
 use actix_web::client;
 use actix_web::HttpMessage;
@@ -107,7 +108,8 @@ impl DnsRecordPutter for CloudflareConfig {
         );
         let record =
             DnsLinkTxtRecord::new(dns_record_name.clone(), ipfs_cid.clone(), dns_record_ttl);
-        Box::new(
+        let (tx, rx) = mpsc::channel();
+        actix::run( ||
             client::put(url)
                 .header("X-Auth-Email", cf_email_address.unwrap().1)
                 .header("X-Auth-Key", cf_api_key.unwrap().1)
@@ -127,8 +129,13 @@ impl DnsRecordPutter for CloudflareConfig {
                 .and_then(move |response: DnsRecordResponse| {
                     debug!("Moving CF put response...");
                     Ok(response.success)
+                }).then(move |res| {
+                    tx.send(res).unwrap();
+                    actix::System::current().stop();
+                    Ok(())
                 }),
-        )
+        );
+        Box::new(future::result(rx.recv().unwrap()))
     }
 }
 

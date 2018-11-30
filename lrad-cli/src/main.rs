@@ -46,15 +46,12 @@ fn main() -> Result<()> {
     } else if let Some(_matches) = matches.subcommand_matches("push") {
         let current_dir = env::current_dir()?;
         let lrad = LradCli::try_load(&current_dir)?;
-        actix::run(|| {
-            lrad.try_push().and_then(|hash| {
+        lrad.try_push().and_then(|hash| {
                 info!("Successfully pushed to IPFS! You can try cloning it from your local IPFS gateway: https://localhost:8080/ipfs/{}", hash);
                 Ok(actix::System::current().stop())
             }).map_err(|err| {
                 error!("Unable to push your repo to ipfs: {:?}", err);
-                actix::System::current().stop()
-            })
-        });
+            }).wait();
     }
     Ok(())
 }
