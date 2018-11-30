@@ -1,5 +1,6 @@
 #![feature(range_contains)]
 #![feature(self_struct_ctor)]
+#![feature(try_trait)]
 // extern crate openssl;
 extern crate serde;
 #[macro_use]
@@ -20,6 +21,7 @@ extern crate log;
 extern crate futures;
 
 use crate::dns::DnsRecordPutter;
+use futures::prelude::*;
 use git2::{DiffOptions, Repository, RepositoryState};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -27,6 +29,7 @@ use tempfile::TempDir;
 
 pub mod config;
 pub mod dns;
+mod docker;
 pub mod error;
 mod ipfs;
 mod vcs;
@@ -65,7 +68,7 @@ impl LradCli {
         Ok(LradCli { repo, config })
     }
 
-    pub fn try_deploy(&self) -> Result<()> {
+    pub fn try_push(&self) -> Result<String> {
         if self.repo.state() != RepositoryState::Clean {
             return Err(vcs::VcsError::RepoNotClean.into());
         } else if self.repo.is_bare() {
@@ -111,13 +114,15 @@ impl LradCli {
             .iter()
             .min_by(|a, b| a.name.len().cmp(&b.name.len()))
             .unwrap();
-        info!("Added to IPFS with hash {}", root.hash);
         info!("Updating Cloudflare DNS Record...");
         self.config
             .dns_provider
-            .try_put_txt_record(root.hash.clone())?;
-        Ok(())
+            .try_put_txt_record(root.hash.clone())
+            .wait()?;
+        Ok(root.hash.clone())
     }
+
+    // pub fn try_build(&self) -> Result<()> {}
 }
 
 pub struct LradDaemon {

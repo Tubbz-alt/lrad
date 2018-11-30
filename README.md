@@ -9,11 +9,11 @@ An update framework for applications running on hobbyist single-board-computers 
 
 ## TODOs
 
-- [ ] LRAD User CLI Tool
+- [ ] lrad-cli
   - [ ] Init
     - [x] Create config file
     - [ ] Interactvie "wizard"
-  - [ ] Deploy
+  - [ ] Push
     - [ ] Transform Git repo
       - [x] Clone bare repository
       - [ ] Unpack objects
@@ -25,12 +25,13 @@ An update framework for applications running on hobbyist single-board-computers 
       - [ ] Remote IPFS API server
         - [ ] SSH tunnel
         - [ ] Are there other ways to securely connect?
+    - [ ] (FUTURE) Use ipld-git, it is not mature right now but is the ideal candidate
     - [ ] Put DNS link record
       - [x] Cloudflare
       - [ ] AWS Route 53
       - [ ] Namecheap
       - [ ] Google DNS
-- [ ] LRAD SBC Daemon
+- [ ] lrad-daemon
   - [ ] Init (how?)
   - [ ] Update
     - [ ] Linux

@@ -1,13 +1,13 @@
 use crate::dns::DnsRecordPutter;
-use crate::error::{ErrorKind, Result};
+use crate::error::{ErrorKind, Future, Error};
 
 use std::env;
 use std::ops::Range;
-use std::sync::{Arc, RwLock};
 
 use actix_web::client;
 use actix_web::HttpMessage;
-use futures::prelude::*;
+use futures::future;
+use futures::prelude::Future as Fut;
 
 #[derive(Deserialize, Serialize)]
 struct CloudflareApiKeyEnvVar(String);
@@ -65,26 +65,34 @@ pub struct CloudflareConfig {
 }
 
 impl DnsRecordPutter for CloudflareConfig {
-    fn try_put_txt_record(&self, ipfs_cid: String) -> Result<bool> {
+    fn try_put_txt_record(&self, ipfs_cid: String) -> Box<Future<bool>> {
         debug!("Reading environment variables");
         let cf_email_address = env::vars()
             .find(|x| x.0 == self.email_env_var.0)
-            .ok_or_else(|| ErrorKind::EnvironmentVariableNotFound(self.email_env_var.0.clone()))?;
+            .ok_or_else(|| ErrorKind::EnvironmentVariableNotFound(self.email_env_var.0.clone()));
+        if cf_email_address.is_err() {
+            return Box::new(future::err(cf_email_address.unwrap_err().into()));
+        }
         let cf_api_key = env::vars()
             .find(|x| x.0 == self.api_key_env_var.0)
-            .ok_or_else(|| {
-                ErrorKind::EnvironmentVariableNotFound(self.api_key_env_var.0.clone())
-            })?;
+            .ok_or_else(|| ErrorKind::EnvironmentVariableNotFound(self.api_key_env_var.0.clone()));
+        if cf_api_key.is_err() {
+            return Box::new(future::err(cf_api_key.unwrap_err().into()));
+        }
         let zone_id = env::vars()
             .find(|x| x.0 == self.zone_id_env_var.0)
-            .ok_or_else(|| {
-                ErrorKind::EnvironmentVariableNotFound(self.zone_id_env_var.0.clone())
-            })?;
+            .ok_or_else(|| ErrorKind::EnvironmentVariableNotFound(self.zone_id_env_var.0.clone()));
+        if zone_id.is_err() {
+            return Box::new(future::err(zone_id.unwrap_err().into()));
+        }
         let dns_record_id = env::vars()
             .find(|x| x.0 == self.dns_record_id_env_var.0)
             .ok_or_else(|| {
                 ErrorKind::EnvironmentVariableNotFound(self.dns_record_id_env_var.0.clone())
-            })?;
+            });
+        if dns_record_id.is_err() {
+            return Box::new(future::err(dns_record_id.unwrap_err().into()));
+        }
         let dns_record_name = self.dns_record_name.clone();
         let dns_record_ttl = self.dns_record_ttl.unwrap_or_default().0;
         if dns_record_ttl != 1 && !VALID_TTL_RANGE.contains(&dns_record_ttl) {
@@ -94,36 +102,31 @@ impl DnsRecordPutter for CloudflareConfig {
         debug!("Building actix-web request");
         let url = format!(
             "https://api.cloudflare.com/client/v4/zones/{}/dns_records/{}",
-            zone_id.1, dns_record_id.1
+            zone_id.unwrap().1,
+            dns_record_id.unwrap().1
         );
         let record =
             DnsLinkTxtRecord::new(dns_record_name.clone(), ipfs_cid.clone(), dns_record_ttl);
         debug!("Sending CF put request...");
-        let res = Arc::new(RwLock::new(None));
-        let tx = res.clone();
-        actix::run(|| {
+        Box::new(
             client::put(url)
-                .header("X-Auth-Email", cf_email_address.1)
-                .header("X-Auth-Key", cf_api_key.1)
+                .header("X-Auth-Email", cf_email_address.unwrap().1)
+                .header("X-Auth-Key", cf_api_key.unwrap().1)
                 .content_type("application/json")
                 .json(record)
                 .unwrap()
                 .send()
-                .map_err(|_| ())
+                .map_err(|err| Error::from(err))
                 .and_then(|res| {
                     debug!("Parsing CF put response...");
-                    res.json().map_err(|_| ())
+                    res.json().map_err(|err| Error::from(err))
                 })
-                .and_then(move |json: DnsRecordResponse| {
+                .and_then(move |response: DnsRecordResponse| {
                     debug!("Moving CF put response...");
-                    *tx.write().unwrap() = Some(json.clone());
                     actix::System::current().stop();
-                    Ok(())
-                })
-        });
-        debug!("Done sending CF");
-        let response = res.read().unwrap().clone().unwrap();
-        Ok(response.success)
+                    Ok(response.success)
+                }),
+        )
     }
 }
 

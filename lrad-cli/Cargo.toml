@@ -1,5 +1,5 @@
 [package]
-name = "lrad-bin"
+name = "lrad-cli"
 version = "0.1.0"
 authors = ["Sameer purisame@spuri.io"]
 edition = "2018"

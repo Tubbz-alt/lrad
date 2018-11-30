@@ -1,2 +1,2 @@
 [workspace]
-members = ["lrad-lib", "lrad-bin"]
+members = ["lrad-lib", "lrad-cli", "lrad-daemon"]

@@ -27,8 +27,8 @@ fn main() -> Result<()> {
         (@subcommand init =>
             (about: "Initializes the current git repo with a .lrad.toml configuration file.")
         )
-        (@subcommand deploy =>
-            (about: "Adds this git repo to IPFS and updates the DNS link record in Cloudflare.")
+        (@subcommand push =>
+            (about: "Pushes this git repo to IPFS and updates the DNS link record in Cloudflare.")
         )
         (@subcommand daemon =>
             (about: "Starts daemon to deploy packages with")
@@ -42,8 +42,10 @@ fn main() -> Result<()> {
     } else if let Some(_matches) = matches.subcommand_matches("deploy") {
         let current_dir = env::current_dir()?;
         let lrad = LradCli::try_load(&current_dir)?;
-        lrad.try_deploy()?;
-        info!("Successfully deployed!");
+        info!(
+            "Successfully pushed to IPFS! You can try cloning it from your local IPFS gateway: https://localhost:8080/ipfs/{}",
+            lrad.try_push()?
+        );
     }
     Ok(())
 }

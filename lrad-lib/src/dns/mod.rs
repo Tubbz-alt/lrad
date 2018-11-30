@@ -11,7 +11,7 @@ use trust_dns_resolver::{
 pub use self::cloudflare::*;
 
 pub trait DnsRecordPutter {
-    fn try_put_txt_record(&self, ipfs_cid: String) -> crate::error::Result<bool>;
+    fn try_put_txt_record(&self, ipfs_cid: String) -> Box<crate::error::Future<bool>>;
 }
 
 pub struct DnsTxtRecordResponse {
