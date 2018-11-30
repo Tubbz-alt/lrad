@@ -123,7 +123,6 @@ impl DnsRecordPutter for CloudflareConfig {
                 })
                 .and_then(move |response: DnsRecordResponse| {
                     debug!("Moving CF put response...");
-                    actix::System::current().stop();
                     Ok(response.success)
                 }),
         )
