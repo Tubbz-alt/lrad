@@ -3,7 +3,6 @@ extern crate lrad;
 extern crate clap;
 #[macro_use]
 extern crate log;
-extern crate actix;
 extern crate dotenv;
 extern crate env_logger;
 extern crate futures;
@@ -43,15 +42,15 @@ fn main() -> Result<()> {
         let current_dir = env::current_dir()?;
         let lrad = LradCli::try_init(&current_dir)?;
         info!("Successfully initialized! Please make sure to store any secrets securely.");
+        Ok(())
     } else if let Some(_matches) = matches.subcommand_matches("push") {
         let current_dir = env::current_dir()?;
         let lrad = LradCli::try_load(&current_dir)?;
         lrad.try_push().and_then(|hash| {
                 info!("Successfully pushed to IPFS! You can try cloning it from your local IPFS gateway: https://localhost:8080/ipfs/{}", hash);
-                Ok(actix::System::current().stop())
-            }).map_err(|err| {
-                error!("Unable to push your repo to ipfs: {:?}", err);
-            }).wait();
+                Ok(())
+        }).wait()
+    } else {
+        Ok(())
     }
-    Ok(())
 }

@@ -91,7 +91,7 @@ impl<'a> IpfsAddRecursive<'a> {
 
     fn walk_dir_to_form(root: &Path, path: &Path, form: &mut Form) -> Result<()> {
         if !path.is_dir() {
-            return Ok(())
+            return Ok(());
         }
         for entry in path.read_dir()? {
             let entry = entry?;

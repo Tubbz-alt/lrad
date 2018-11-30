@@ -35,12 +35,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 pub type BoxFuture<T> = Box<futures::future::Future<Item = T, Error = Error>>;
 
-// impl From<ErrorStack> for Error {
-//     fn from(err: ErrorStack) -> Self {
-//         Box::new(ErrorKind::Openssl(err))
-//     }
-// }
-
 impl From<TomlSerError> for Error {
     fn from(err: TomlSerError) -> Self {
         Box::new(ErrorKind::TomlSer(err))

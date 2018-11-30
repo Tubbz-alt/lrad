@@ -109,7 +109,7 @@ impl DnsRecordPutter for CloudflareConfig {
         let record =
             DnsLinkTxtRecord::new(dns_record_name.clone(), ipfs_cid.clone(), dns_record_ttl);
         let (tx, rx) = mpsc::channel();
-        actix::run( ||
+        actix::run(|| {
             client::put(url)
                 .header("X-Auth-Email", cf_email_address.unwrap().1)
                 .header("X-Auth-Key", cf_api_key.unwrap().1)
@@ -129,12 +129,13 @@ impl DnsRecordPutter for CloudflareConfig {
                 .and_then(move |response: DnsRecordResponse| {
                     debug!("Moving CF put response...");
                     Ok(response.success)
-                }).then(move |res| {
+                })
+                .then(move |res| {
                     tx.send(res).unwrap();
                     actix::System::current().stop();
                     Ok(())
-                }),
-        );
+                })
+        });
         Box::new(future::result(rx.recv().unwrap()))
     }
 }
