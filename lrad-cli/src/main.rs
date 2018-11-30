@@ -14,14 +14,15 @@ use futures::prelude::*;
 use std::env;
 
 fn main() -> Result<()> {
-    if dotenv::dotenv().is_ok() {
-        // TODO: Add a config option for this
-        info!("A .env file was found and environment variables were loaded from it. If you do not want this behavior, change it in the config file.");
-    }
+    let dotenv_res = dotenv::dotenv();
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "lrad=info");
     }
     env_logger::init();
+    if dotenv_res.is_ok() {
+        // TODO: Add a config option for this
+        warn!("A .env file was found and environment variables were loaded from it. If you do not want this behavior, change it in the config file.");
+    }
     let matches = clap_app!(LRAD =>
         (version: crate_version!())
         (author: crate_authors!())
@@ -50,7 +51,7 @@ fn main() -> Result<()> {
                 info!("Successfully pushed to IPFS! You can try cloning it from your local IPFS gateway: https://localhost:8080/ipfs/{}", hash);
                 Ok(actix::System::current().stop())
             }).map_err(|err| {
-                println!("Unable to push your repo to ipfs: {:?}", err);
+                error!("Unable to push your repo to ipfs: {:?}", err);
                 actix::System::current().stop()
             })
         });
