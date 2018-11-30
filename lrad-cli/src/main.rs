@@ -40,13 +40,12 @@ fn main() -> Result<()> {
     .get_matches();
     if let Some(_matches) = matches.subcommand_matches("init") {
         let current_dir = env::current_dir()?;
-        let lrad = LradCli::try_init(&current_dir)?;
+        LradCli::try_init(&current_dir)?;
         info!("Successfully initialized! Please make sure to store any secrets securely.");
         Ok(())
     } else if let Some(_matches) = matches.subcommand_matches("push") {
         let current_dir = env::current_dir()?;
-        let lrad = LradCli::try_load(&current_dir)?;
-        lrad.try_push().and_then(|hash| {
+        LradCli::try_load(&current_dir)?.try_push().and_then(|hash| {
                 info!("Successfully pushed to IPFS! You can try cloning it from your local IPFS gateway: https://localhost:8080/ipfs/{}", hash);
                 Ok(())
         }).wait()

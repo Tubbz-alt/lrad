@@ -11,16 +11,15 @@ extern crate tempfile;
 extern crate toml;
 extern crate trust_dns_proto;
 extern crate trust_dns_resolver;
-#[macro_use]
-extern crate lazy_static;
 extern crate actix;
 extern crate actix_web;
 extern crate serde_json;
 #[macro_use]
 extern crate log;
 extern crate futures;
+extern crate url;
+extern crate percent_encoding;
 
-use crate::dns::DnsRecordPutter;
 use futures::future;
 use futures::prelude::*;
 use git2::{DiffOptions, Repository, RepositoryState};
@@ -94,7 +93,7 @@ impl LradCli {
                         .files_changed()
                         != 0
                     {
-                        return Err(vcs::VcsError::RepoHasUnstagedChanges.into());
+                        // return Err(vcs::VcsError::RepoHasUnstagedChanges.into());
                     }
                     debug!("Repo is clean, good to go!");
                     let repo_path = PathBuf::from(repo.path());
@@ -130,7 +129,8 @@ impl LradCli {
                         .iter()
                         .min_by(|a, b| a.name.len().cmp(&b.name.len()))
                         .unwrap();
-                    dns_provider.try_put_txt_record(root.hash.clone()).wait()?;
+                    // dns_provider.try_put_txt_record(root.hash.clone()).wait()?;
+                    docker::build_image(format!("http://localhost:8080/ipfs/{}", root.hash));
                     Ok(root.hash.clone())
                 }),
         )
