@@ -62,7 +62,9 @@ impl<'a> IpfsAddRecursive<'a> {
             .as_str(),
         )?;
         let mut form = Form::new();
+        debug!("Walking directory");
         Self::walk_dir_to_form(&self.path.parent().unwrap(), &self.path, &mut form)?;
+        debug!("Done walking directory");
         handle.httppost(form)?;
         let mut dst = Vec::new();
         {
@@ -88,6 +90,9 @@ impl<'a> IpfsAddRecursive<'a> {
     }
 
     fn walk_dir_to_form(root: &Path, path: &Path, form: &mut Form) -> Result<()> {
+        if !path.is_dir() {
+            return Ok(())
+        }
         for entry in path.read_dir()? {
             let entry = entry?;
             let absolute_entry_path = entry.path();

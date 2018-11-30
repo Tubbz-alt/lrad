@@ -113,14 +113,15 @@ impl LradCli {
                             bare_repo.remote_delete(&remote.unwrap())?;
                         }
                     }
+                    debug!("Updating server info");
                     Command::new("git")
                         .arg("update-server-info")
                         .current_dir(&bare_repo_path)
                         .output()?;
-                    Ok(bare_repo_path)
+                    Ok((tmp_dir, bare_repo_path))
                 })
-                .and_then(move |bare_repo_path| {
-                    info!("Adding to IPFS...");
+                .and_then(move |(tmp_dir, bare_repo_path)| {
+                    info!("Adding files to IPFS...");
                     ipfs::IpfsAddRecursive::new(&ipfs_api_server, &bare_repo_path).run()
                 })
                 .and_then(move |ipfs_add_response| {
