@@ -39,5 +39,5 @@ after_success:
   - eval "$(ssh-agent -s)"
   - chmod 600 /tmp/ipfs_ssh_key
   - ssh-add /tmp/ipfs_ssh_key
-  - ./test/ipfs_deploy.sh
+  - ./test/ipfs_push.sh
   

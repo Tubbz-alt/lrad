@@ -107,13 +107,16 @@ impl DnsRecordPutter for CloudflareConfig {
         );
         let record =
             DnsLinkTxtRecord::new(dns_record_name.clone(), ipfs_cid.clone(), dns_record_ttl);
-        debug!("Sending CF put request...");
         Box::new(
             client::put(url)
                 .header("X-Auth-Email", cf_email_address.unwrap().1)
                 .header("X-Auth-Key", cf_api_key.unwrap().1)
                 .content_type("application/json")
                 .json(record)
+                .map(|x| {
+                    debug!("Sending CF put request...");
+                    x
+                })
                 .unwrap()
                 .send()
                 .map_err(|err| Error::from(err))
