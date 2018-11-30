@@ -1,5 +1,5 @@
 use crate::dns::DnsRecordPutter;
-use crate::error::{ErrorKind, Future, Error};
+use crate::error::{BoxFuture, Error, ErrorKind};
 
 use std::env;
 use std::ops::Range;
@@ -7,7 +7,7 @@ use std::ops::Range;
 use actix_web::client;
 use actix_web::HttpMessage;
 use futures::future;
-use futures::prelude::Future as Fut;
+use futures::prelude::*;
 
 #[derive(Deserialize, Serialize)]
 struct CloudflareApiKeyEnvVar(String);
@@ -65,7 +65,7 @@ pub struct CloudflareConfig {
 }
 
 impl DnsRecordPutter for CloudflareConfig {
-    fn try_put_txt_record(&self, ipfs_cid: String) -> Box<Future<bool>> {
+    fn try_put_txt_record(&self, ipfs_cid: String) -> BoxFuture<bool> {
         debug!("Reading environment variables");
         let cf_email_address = env::vars()
             .find(|x| x.0 == self.email_env_var.0)

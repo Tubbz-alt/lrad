@@ -21,10 +21,12 @@ extern crate log;
 extern crate futures;
 
 use crate::dns::DnsRecordPutter;
+use futures::future;
 use futures::prelude::*;
 use git2::{DiffOptions, Repository, RepositoryState};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::rc::Rc;
 use tempfile::TempDir;
 
 pub mod config;
@@ -34,6 +36,7 @@ pub mod error;
 mod ipfs;
 mod vcs;
 
+use self::error::BoxFuture;
 use self::error::Result;
 
 #[cfg(test)]
@@ -68,58 +71,68 @@ impl LradCli {
         Ok(LradCli { repo, config })
     }
 
-    pub fn try_push(&self) -> Result<String> {
+    pub fn try_push(self) -> BoxFuture<String> {
         if self.repo.state() != RepositoryState::Clean {
-            return Err(vcs::VcsError::RepoNotClean.into());
+            return Box::new(future::err(vcs::VcsError::RepoNotClean.into()));
         } else if self.repo.is_bare() {
-            return Err(vcs::VcsError::RepoShouldNotBeBare.into());
+            return Box::new(future::err(vcs::VcsError::RepoShouldNotBeBare.into()));
         }
-        let index = self.repo.index()?;
-        if index.has_conflicts() {
-            return Err(vcs::VcsError::RepoHasConflicts.into());
-        } else if self
-            .repo
-            .diff_index_to_workdir(
-                Some(&index),
-                Some(DiffOptions::default().ignore_submodules(true)),
-            )?
-            .stats()?
-            .files_changed()
-            != 0
-        {
-            return Err(vcs::VcsError::RepoHasUnstagedChanges.into());
-        }
-        debug!("Repo is clean, good to go!");
-        info!("Converting to bare repo...");
-        let tmp_dir = TempDir::new()?;
-        let repo_path = self.repo.path().parent().unwrap();
-        let mut bare_repo_path = PathBuf::from(tmp_dir.path());
-        bare_repo_path.push(repo_path.file_name().unwrap());
-        let bare_repo = vcs::clone_bare(repo_path.to_str().unwrap(), &bare_repo_path)?;
-        debug!("Stripping remotes from bare repo.");
-        for remote in bare_repo.remotes()?.iter() {
-            if remote.is_some() {
-                bare_repo.remote_delete(&remote.unwrap())?;
-            }
-        }
-        Command::new("git")
-            .arg("update-server-info")
-            .current_dir(&bare_repo_path)
-            .output()?;
-        info!("Adding to IPFS...");
-        let ipfs_add_all =
-            ipfs::IpfsAddRecursive::new(&self.config.ipfs_api_server, &bare_repo_path);
-        let ipfs_add_response = ipfs_add_all.run()?;
-        let root = ipfs_add_response
-            .iter()
-            .min_by(|a, b| a.name.len().cmp(&b.name.len()))
-            .unwrap();
-        info!("Updating Cloudflare DNS Record...");
-        self.config
-            .dns_provider
-            .try_put_txt_record(root.hash.clone())
-            .wait()?;
-        Ok(root.hash.clone())
+        let repo = Rc::new(self.repo);
+        let ipfs_api_server = Rc::new(self.config.ipfs_api_server);
+        let dns_provider = Rc::new(self.config.dns_provider);
+        Box::new(
+            future::result(repo.index().map_err(|err| err.into()))
+                .and_then(move |index| {
+                    if index.has_conflicts() {
+                        return Err(vcs::VcsError::RepoHasConflicts.into());
+                    } else if repo
+                        .diff_index_to_workdir(
+                            Some(&index),
+                            Some(DiffOptions::default().ignore_submodules(true)),
+                        )?
+                        .stats()?
+                        .files_changed()
+                        != 0
+                    {
+                        return Err(vcs::VcsError::RepoHasUnstagedChanges.into());
+                    }
+                    debug!("Repo is clean, good to go!");
+                    let repo_path = PathBuf::from(repo.path());
+                    Ok(repo_path)
+                })
+                .and_then(|repo_path| {
+                    info!("Converting to bare repo...");
+                    let repo_path = repo_path.parent().unwrap();
+                    let tmp_dir = TempDir::new()?;
+                    let mut bare_repo_path = PathBuf::from(tmp_dir.path());
+                    bare_repo_path.push(repo_path.file_name().unwrap());
+                    let bare_repo = vcs::clone_bare(repo_path.to_str().unwrap(), &bare_repo_path)?;
+                    debug!("Stripping remotes from bare repo.");
+                    for remote in bare_repo.remotes()?.iter() {
+                        if remote.is_some() {
+                            bare_repo.remote_delete(&remote.unwrap())?;
+                        }
+                    }
+                    Command::new("git")
+                        .arg("update-server-info")
+                        .current_dir(&bare_repo_path)
+                        .output()?;
+                    Ok(bare_repo_path)
+                })
+                .and_then(move |bare_repo_path| {
+                    info!("Adding to IPFS...");
+                    ipfs::IpfsAddRecursive::new(&ipfs_api_server, &bare_repo_path).run()
+                })
+                .and_then(move |ipfs_add_response| {
+                    info!("Updating Cloudflare DNS Record...");
+                    let root = ipfs_add_response
+                        .iter()
+                        .min_by(|a, b| a.name.len().cmp(&b.name.len()))
+                        .unwrap();
+                    dns_provider.try_put_txt_record(root.hash.clone()).wait()?;
+                    Ok(root.hash.clone())
+                }),
+        )
     }
 
     // pub fn try_build(&self) -> Result<()> {}

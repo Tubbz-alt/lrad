@@ -1,4 +1,3 @@
-use std::ops::Try;
 use super::vcs::VcsError;
 use actix_web::client::SendRequestError;
 use actix_web::error::JsonPayloadError;
@@ -7,6 +6,7 @@ use curl::{Error as CurlError, FormError as CurlFormError};
 use git2::Error as Git2Error;
 use serde_json::Error as SerdeJsonError;
 use std::io::Error as IoError;
+use std::ops::Try;
 use std::str::Utf8Error;
 use toml::de::Error as TomlDeError;
 use toml::ser::Error as TomlSerError;
@@ -33,7 +33,7 @@ pub type Error = Box<ErrorKind>;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub type Future<T> = futures::future::Future<Item = T, Error = Error>;
+pub type BoxFuture<T> = Box<futures::future::Future<Item = T, Error = Error>>;
 
 // impl From<ErrorStack> for Error {
 //     fn from(err: ErrorStack) -> Self {

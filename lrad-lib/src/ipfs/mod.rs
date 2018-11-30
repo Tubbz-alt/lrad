@@ -92,7 +92,10 @@ impl<'a> IpfsAddRecursive<'a> {
             let entry = entry?;
             let absolute_entry_path = entry.path();
             if absolute_entry_path.is_dir() {
-                debug!("Looking at directory {}", absolute_entry_path.to_str().unwrap());
+                debug!(
+                    "Looking at directory {}",
+                    absolute_entry_path.to_str().unwrap()
+                );
                 Self::walk_dir_to_form(root, &absolute_entry_path, form)?;
             } else {
                 let path_buf: PathBuf = absolute_entry_path.to_path_buf();

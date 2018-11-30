@@ -11,7 +11,7 @@ use trust_dns_resolver::{
 pub use self::cloudflare::*;
 
 pub trait DnsRecordPutter {
-    fn try_put_txt_record(&self, ipfs_cid: String) -> Box<crate::error::Future<bool>>;
+    fn try_put_txt_record(&self, ipfs_cid: String) -> crate::error::BoxFuture<bool>;
 }
 
 pub struct DnsTxtRecordResponse {
@@ -38,7 +38,7 @@ impl DnsTxtRecordResponse {
                     }
                     Ok(Some(Self {
                         txt_data,
-                        valid_until: lookup.valid_until()
+                        valid_until: lookup.valid_until(),
                     }))
                 }
                 _ => Ok(None), // TODO: Could a TXT lookup return a non txt?
