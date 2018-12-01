@@ -131,8 +131,8 @@ impl DnsRecordPutter for CloudflareConfig {
                     Ok(response.success)
                 })
                 .then(move |res| {
-                    tx.send(res).unwrap();
                     actix::System::current().stop();
+                    tx.send(res).unwrap();
                     Ok(())
                 })
         });

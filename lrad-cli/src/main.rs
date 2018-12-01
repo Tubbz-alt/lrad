@@ -1,11 +1,7 @@
-extern crate lrad;
 #[macro_use]
 extern crate clap;
 #[macro_use]
 extern crate log;
-extern crate dotenv;
-extern crate env_logger;
-extern crate futures;
 
 use lrad::{error::Result, LradCli};
 
@@ -38,6 +34,7 @@ fn main() -> Result<()> {
         )
     )
     .get_matches();
+
     if let Some(_matches) = matches.subcommand_matches("init") {
         let current_dir = env::current_dir()?;
         LradCli::try_init(&current_dir)?;
@@ -45,9 +42,10 @@ fn main() -> Result<()> {
         Ok(())
     } else if let Some(_matches) = matches.subcommand_matches("push") {
         let current_dir = env::current_dir()?;
-        LradCli::try_load(&current_dir)?.try_push().and_then(|hash| {
-                info!("Successfully pushed to IPFS! You can try cloning it from your local IPFS gateway: https://localhost:8080/ipfs/{}", hash);
-                Ok(())
+        let lrad = LradCli::try_load(&current_dir)?;
+        lrad.try_push().and_then(|hash| {
+            info!("Successfully pushed to IPFS! You can try cloning it from your local IPFS gateway: http://localhost:8080/ipfs/{}", hash);
+            Ok(())
         }).wait()
     } else {
         Ok(())

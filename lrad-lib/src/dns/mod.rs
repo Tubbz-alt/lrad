@@ -1,12 +1,13 @@
 mod cloudflare;
-// use crate::error::Result;
 
+use ::actix::prelude::*;
 use trust_dns_proto::rr::{RData, RecordType};
 use trust_dns_resolver::{
     config::{ResolverConfig, ResolverOpts},
-    error::ResolveError,
     Resolver,
 };
+
+use crate::error::Result;
 
 pub use self::cloudflare::*;
 
@@ -20,7 +21,7 @@ pub struct DnsTxtRecordResponse {
 }
 
 impl DnsTxtRecordResponse {
-    pub fn lookup_txt_record(name: &str) -> Result<Option<Self>, ResolveError> {
+    pub fn lookup_txt_record(name: &str) -> Result<Option<Self>> {
         let resolver = Resolver::new(ResolverConfig::cloudflare_tls(), ResolverOpts::default())?;
         let lookup = resolver.lookup(name, RecordType::TXT)?;
         match lookup.iter().nth(0) {
@@ -46,4 +47,9 @@ impl DnsTxtRecordResponse {
             None => Ok(None),
         }
     }
+}
+
+// TODO: convert to actix actors
+impl Message for DnsTxtRecordResponse {
+    type Result = Result<Option<Self>>;
 }

@@ -1,25 +1,11 @@
 #![feature(range_contains)]
-#![feature(self_struct_ctor)]
 #![feature(try_trait)]
-// extern crate openssl;
-extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-extern crate chrono;
-extern crate git2;
-extern crate tempfile;
-extern crate toml;
-extern crate trust_dns_proto;
-extern crate trust_dns_resolver;
-extern crate actix;
-extern crate actix_web;
-extern crate serde_json;
 #[macro_use]
 extern crate log;
-extern crate futures;
-extern crate url;
-extern crate percent_encoding;
 
+use crate::dns::DnsRecordPutter;
 use futures::future;
 use futures::prelude::*;
 use git2::{DiffOptions, Repository, RepositoryState};
@@ -35,6 +21,7 @@ pub mod error;
 mod ipfs;
 mod vcs;
 
+pub use self::dns::DnsTxtRecordResponse;
 use self::error::BoxFuture;
 use self::error::Result;
 
@@ -93,7 +80,7 @@ impl LradCli {
                         .files_changed()
                         != 0
                     {
-                        // return Err(vcs::VcsError::RepoHasUnstagedChanges.into());
+                        return Err(vcs::VcsError::RepoHasUnstagedChanges.into());
                     }
                     debug!("Repo is clean, good to go!");
                     let repo_path = PathBuf::from(repo.path());
@@ -119,26 +106,32 @@ impl LradCli {
                         .output()?;
                     Ok((tmp_dir, bare_repo_path))
                 })
-                .and_then(move |(tmp_dir, bare_repo_path)| {
+                .and_then(move |(_tmp_dir, bare_repo_path)| {
                     info!("Adding files to IPFS...");
                     ipfs::IpfsAddRecursive::new(&ipfs_api_server, &bare_repo_path).run()
                 })
                 .and_then(move |ipfs_add_response| {
                     info!("Updating Cloudflare DNS Record...");
-                    let root = ipfs_add_response
-                        .iter()
-                        .min_by(|a, b| a.name.len().cmp(&b.name.len()))
-                        .unwrap();
-                    // dns_provider.try_put_txt_record(root.hash.clone()).wait()?;
-                    docker::build_image(format!("http://localhost:8080/ipfs/{}", root.hash));
+                    let root = ipfs_add_response.iter().last().unwrap();
+                    dns_provider.try_put_txt_record(root.hash.clone()).wait()?;
+
                     Ok(root.hash.clone())
                 }),
         )
     }
-
-    // pub fn try_build(&self) -> Result<()> {}
 }
 
 pub struct LradDaemon {
     domain_name: String,
+}
+
+impl LradDaemon {
+    pub fn try_lookup_txt_record(&self) -> Result<Option<DnsTxtRecordResponse>> {
+        DnsTxtRecordResponse::lookup_txt_record(&self.domain_name)
+    }
+
+    // pub fn try_build(&self) -> Result<bool> {
+    //     let repo = {};
+    //     docker::build_image(repo);
+    // }
 }

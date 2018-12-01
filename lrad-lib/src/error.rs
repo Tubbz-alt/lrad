@@ -6,14 +6,13 @@ use curl::{Error as CurlError, FormError as CurlFormError};
 use git2::Error as Git2Error;
 use serde_json::Error as SerdeJsonError;
 use std::io::Error as IoError;
-use std::ops::Try;
 use std::str::Utf8Error;
 use toml::de::Error as TomlDeError;
 use toml::ser::Error as TomlSerError;
+use trust_dns_resolver::error::ResolveError;
 
 #[derive(Debug)]
 pub enum ErrorKind {
-    // Openssl(ErrorStack),
     TomlSer(TomlSerError),
     TomlDe(TomlDeError),
     IoError(IoError),
@@ -27,6 +26,7 @@ pub enum ErrorKind {
     ActixWebError(ActixWebError),
     JsonPayloadError(JsonPayloadError),
     SendRequestError(SendRequestError),
+    TrustDnsResolveError(ResolveError),
 }
 
 pub type Error = Box<ErrorKind>;
@@ -104,5 +104,11 @@ impl From<JsonPayloadError> for Error {
 impl From<SendRequestError> for Error {
     fn from(err: SendRequestError) -> Self {
         Box::new(ErrorKind::SendRequestError(err))
+    }
+}
+
+impl From<ResolveError> for Error {
+    fn from(err: ResolveError) -> Self {
+        Box::new(ErrorKind::TrustDnsResolveError(err))
     }
 }
