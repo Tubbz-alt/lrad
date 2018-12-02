@@ -71,8 +71,13 @@ impl Handler<DnsLookup> for DaemonActor {
                 |new_record, actor, ctx| {
                     info!("Received new DNS record, checking if a deployment is necessary.");
                     if new_record != actor.record {
+                        actor.record = new_record;
+                        info!("Triggering deployment.");
                         ctx.notify(Deploy {});
+                    } else {
+                        info!("No deployment necessary.");
                     }
+                    info!("Sleeping for 300 secs.");
                     ctx.notify_later(DnsLookup {}, Duration::from_secs(300));
                 },
             ),
