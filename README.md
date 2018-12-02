@@ -12,7 +12,7 @@ An update framework for applications running on hobbyist single-board-computers 
 - [ ] lrad-cli
   - [ ] Init
     - [x] Create config file
-    - [ ] Interactvie "wizard"
+    - [ ] Interactive "wizard"
   - [ ] Push
     - [ ] Transform Git repo
       - [x] Clone bare repository
@@ -25,7 +25,7 @@ An update framework for applications running on hobbyist single-board-computers 
       - [ ] Remote IPFS API server
         - [ ] SSH tunnel
         - [ ] Are there other ways to securely connect?
-    - [ ] (FUTURE) Use ipld-git, it is not mature right now but is the ideal candidate
+      - [ ] (FUTURE) Use ipld-git, it is not mature right now but is the ideal candidate
     - [ ] Put DNS link record
       - [x] Cloudflare
       - [ ] AWS Route 53
@@ -33,12 +33,16 @@ An update framework for applications running on hobbyist single-board-computers 
       - [ ] Google DNS
 - [ ] lrad-daemon
   - [ ] ipld-git integration (right now, dummy http transport means the entire history is required and only git cli can clone from ipfs)
-  - [x] Docker image build
-  - [x] Docker container create
-  - [x] Docker old containers remove
-  - [x] Docker new container start
-  - [ ] Docker configuration for various stages
-  - [x] DNS txt record polling
+  - [x] Docker
+    - [x] image build
+    - [x] container create
+    - [x] container remove
+    - [x] container start
+    - [ ] Docker configuration for the steps
+  - [ ] DNS txt record polling
+    - [x] Naive just every 300 sec poll
+    - [ ] Smart TTL-based polling with backoff
+  - [x] Use Actix
 
 ## Motivation
 
@@ -92,8 +96,9 @@ The process will be implemented using the Rust, a systems programming language t
 
 - [x] Begin implementation
 
-- [ ] Revise design as needed
+- [x] Revise design as needed
 
-- [ ] Begin testing on production system
+- [x] Begin testing on production system
 
-- [ ] Finish implementation and testing
+- [x] Finish implementation and testing
+
