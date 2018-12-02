@@ -32,12 +32,12 @@ An update framework for applications running on hobbyist single-board-computers 
       - [ ] Namecheap
       - [ ] Google DNS
 - [ ] lrad-daemon
-  - [ ] Init (how?)
-  - [ ] Update
-    - [ ] Linux
-      - [ ] Systemd service
-    - [ ] Windows (not for now)
-    - [ ] Update stages (finite state machine)
+  - [ ] ipld-git integration (right now, dummy http transport means the entire history is required and only git cli can clone from ipfs)
+  - [x] Docker image build
+  - [x] Docker container create
+  - [x] Docker old containers remove
+  - [x] Docker new container start
+  - [ ] Docker configuration for various stages
   - [x] DNS txt record polling
 
 ## Motivation

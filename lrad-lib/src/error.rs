@@ -1,6 +1,7 @@
 use super::vcs::VcsError;
 use actix_web::client::SendRequestError;
 use actix_web::error::JsonPayloadError;
+use actix_web::error::PayloadError;
 use actix_web::Error as ActixWebError;
 use curl::{Error as CurlError, FormError as CurlFormError};
 use git2::Error as Git2Error;
@@ -25,6 +26,7 @@ pub enum ErrorKind {
     Utf8Error(Utf8Error),
     ActixWebError(ActixWebError),
     JsonPayloadError(JsonPayloadError),
+    PayloadError(PayloadError),
     SendRequestError(SendRequestError),
     TrustDnsResolveError(ResolveError),
 }
@@ -98,6 +100,12 @@ impl From<ActixWebError> for Error {
 impl From<JsonPayloadError> for Error {
     fn from(err: JsonPayloadError) -> Self {
         Box::new(ErrorKind::JsonPayloadError(err))
+    }
+}
+
+impl From<PayloadError> for Error {
+    fn from(err: PayloadError) -> Self {
+        Box::new(ErrorKind::PayloadError(err))
     }
 }
 

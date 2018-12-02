@@ -1,14 +1,15 @@
 #![feature(range_contains)]
 #![feature(try_trait)]
+#![feature(box_patterns)]
 #[macro_use]
 extern crate serde_derive;
 #[macro_use]
 extern crate log;
 
 use crate::dns::DnsRecordPutter;
-use futures::future;
 use futures::prelude::*;
-use git2::{DiffOptions, Repository, RepositoryState};
+use futures::{future, stream};
+use git2::{build::RepoBuilder, DiffOptions, Repository, RepositoryState};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
@@ -22,8 +23,7 @@ mod ipfs;
 mod vcs;
 
 pub use self::dns::DnsTxtRecordResponse;
-use self::error::BoxFuture;
-use self::error::Result;
+use self::error::{BoxFuture, Error, ErrorKind, Result};
 
 #[cfg(test)]
 mod tests {
@@ -35,13 +35,13 @@ mod tests {
 
 pub struct LradCli {
     repo: Repository,
-    config: config::Config,
+    config: config::CliConfig,
 }
 
 impl LradCli {
     pub fn try_load(path: &Path) -> Result<Self> {
         let repo = Repository::discover(path)?;
-        let config = config::Config::try_from(&repo)?;
+        let config = config::CliConfig::try_from(&repo)?;
         Ok(LradCli { repo, config })
     }
 
@@ -49,7 +49,7 @@ impl LradCli {
         debug!("Finding repo...");
         let repo = Repository::discover(path)?;
         debug!("Found repo at {:#?}", repo.path());
-        let config = config::Config::default();
+        let config = config::CliConfig::default();
         config.write(&repo)?;
         if !repo.status_should_ignore(Path::new(".env"))? {
             warn!("The .env file may accidentally be committed! Please add it to your .gitignore if you plan on using it to store secrets.");
@@ -122,16 +122,103 @@ impl LradCli {
 }
 
 pub struct LradDaemon {
-    domain_name: String,
+    config: config::DaemonConfig,
 }
 
 impl LradDaemon {
-    pub fn try_lookup_txt_record(&self) -> Result<Option<DnsTxtRecordResponse>> {
-        DnsTxtRecordResponse::lookup_txt_record(&self.domain_name)
+    pub fn try_load(path: &Path) -> Result<Self> {
+        let config = config::DaemonConfig::try_from(path)?;
+        Ok(LradDaemon { config })
     }
 
-    // pub fn try_build(&self) -> Result<bool> {
-    //     let repo = {};
-    //     docker::build_image(repo);
-    // }
+    pub fn try_lookup_txt_record(
+        &self,
+    ) -> impl Future<Item = Option<DnsTxtRecordResponse>, Error = Error> {
+        DnsTxtRecordResponse::lookup_txt_record(&self.config.dns_record_name)
+        // .or_else(|err| {
+        //     match &err {
+        //         box ErrorKind::TrustDnsResolveError(resolve_err) => match resolve_err.kind() {
+        //             trust_dns_resolver::error::ResolveErrorKind::NoRecordsFound {
+        //                 query: _,
+        //                 valid_until: _,
+        //             } => DnsTxtRecordResponse::lookup_txt_record(&format!(
+        //                 "_dnslink.{}",
+        //                 &self.config.dns_record_name
+        //             )),
+        //             _ => future::err(err),
+        //         },
+        //         _ => future::err(err),
+        //     }
+        // })
+    }
+
+    pub fn try_deploy(&self) -> BoxFuture<bool> {
+        let dns_record_name = self.config.dns_record_name.get("_dnslink.".len()..);
+
+        if dns_record_name.is_none() {
+            return Box::new(future::ok(false));
+        }
+        let dns_record_name = String::from(dns_record_name.unwrap());
+        Box::new(
+            future::result(TempDir::new())
+                .map_err(|err| -> Error { err.into() })
+                .and_then(move |tmp_dir| {
+                    debug!("Cloning git repo with dns record {}", dns_record_name);
+
+                    Command::new("git")
+                        .arg("clone")
+                        .arg(format!("http://localhost:8080/ipns/{}", dns_record_name))
+                        .arg("--single-branch")
+                        .current_dir(tmp_dir.path())
+                        .output()?;
+                    let mut repo_path = tmp_dir.path().to_path_buf();
+                    repo_path.push(dns_record_name.to_string());
+                    let repo = Repository::discover(repo_path)?;
+                    Ok((tmp_dir, repo, format!("{}:latest", dns_record_name)))
+                })
+                .and_then(|(tmp_dir, repo, image_name)| {
+                    docker::build_image(&repo, image_name.clone()).map(|x| (x, image_name, tmp_dir))
+                })
+                .and_then(|(ok, image_name, _tmp_dir)| {
+                    debug!("Creating docker container");
+                    docker::create_new_container(image_name.clone(), None).map(|x| (x, image_name))
+                })
+                .and_then(|(create_container_response, image_name)| {
+                    debug!("Listing docker images");
+                    docker::list_images()
+                        .map(|images| (create_container_response, image_name, images))
+                })
+                .and_then(|(create_container_response, image_name, images)| {
+                    debug!("Listing existing docker images");
+                    docker::list_containers().map(|containers| {
+                        (create_container_response, image_name, images, containers)
+                    })
+                })
+                .and_then(
+                    move |(create_container_response, image_name, images, containers)| {
+                        debug!("Removing old docker container(s)");
+                        let removable_image_ids: Vec<String> = images
+                            .iter()
+                            .filter(|image| image.repo_tags.contains(&image_name))
+                            .map(|image| image.id.clone())
+                            .collect();
+
+                        // TODO: This currently deletes all docker containers, need to selectively delete the ones of interest.
+                        // let containers_to_remove: Vec<docker::ListContainersResponse> = containers.iter().filter(|container| {
+                        //     container.id != create_container_response.id // && removable_image_ids.contains(&container.image)
+                        // }).collect();
+                        stream::iter_ok(containers)
+                            .and_then(|container| {
+                                docker::force_remove_running_container(container.id.clone())
+                            })
+                            .collect()
+                            .map(|x| (x, create_container_response))
+                    },
+                )
+                .and_then(|(_removed, create_container_response)| {
+                    debug!("Starting new docker container");
+                    docker::start_container(create_container_response.id)
+                }),
+        )
+    }
 }

@@ -11,7 +11,7 @@ use std::env;
 fn main() -> Result<()> {
     let dotenv_res = dotenv::dotenv();
     if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "lrad=info");
+        env::set_var("RUST_LOG", "lrad=info,lrad-cli=info");
     }
     env_logger::init();
     if dotenv_res.is_ok() {

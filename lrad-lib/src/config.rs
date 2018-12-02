@@ -9,12 +9,12 @@ use git2::Repository;
 use crate::error::Result;
 
 #[derive(Deserialize, Serialize, Default)]
-pub struct Config {
+pub struct CliConfig {
     pub dns_provider: CloudflareConfig,
     pub ipfs_api_server: IpfsApiServerConfig,
 }
 
-impl Config {
+impl CliConfig {
     fn config_path(repo: &Repository) -> Result<PathBuf> {
         let path = if !repo.is_bare() {
             repo.path()
@@ -40,5 +40,22 @@ impl Config {
         let mut file = File::create(Self::config_path(repo)?)?;
         file.write(config_json_str.as_bytes())?;
         Ok(())
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct DaemonConfig {
+    /// e.g. git.lrad.io
+    pub dns_record_name: String
+}
+
+impl DaemonConfig {
+
+    pub fn try_from(path: &Path) -> Result<Self> {
+        let mut file = File::open(path)?;
+        let metadata = file.metadata()?;
+        let mut buf = Vec::with_capacity(metadata.len() as usize);
+        let _bytes_read = file.read_to_end(&mut buf)?;
+        toml::from_slice(buf.as_slice()).map_err(|err| err.into())
     }
 }

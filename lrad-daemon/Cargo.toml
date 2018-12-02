@@ -6,3 +6,9 @@ edition = "2018"
 
 [dependencies]
 lrad = { version = "0.1", path = "../lrad-lib" }
+clap = "2.32"
+log = "0.4"
+env_logger = "0.6"
+dotenv = "0.13"
+futures = "0.1"
+actix = "0.7"
