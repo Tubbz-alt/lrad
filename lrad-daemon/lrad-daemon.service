@@ -1,0 +1,11 @@
+[Unit]
+Description=lrad Daemon
+After=network.target
+
+[Service]
+User=root
+ExecStart=/usr/bin/lrad-daemon
+
+[Install]
+WantedBy=default.target
+Alias=lrad-daemon.service
