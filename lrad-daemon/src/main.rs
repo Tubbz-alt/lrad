@@ -16,7 +16,7 @@ use std::env;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-const CONFIG_FILE_PATH: &'static str = "/etc/lrad/lrad.toml";
+const CONFIG_FILE_PATH: &'static str = "/etc/lrad/lrad-daemon.toml";
 
 fn main() -> Result<()> {
     if env::var("RUST_LOG").is_err() {
