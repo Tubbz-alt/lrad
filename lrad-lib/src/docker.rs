@@ -41,7 +41,7 @@ pub fn build_image(
             ))
             .header("Host", "lrad")
             .with_connection(client::Connection::from_stream(stream))
-            .timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(3600))
             .body(ar.into_inner().unwrap())
             .map(|x| {
                 debug!("Sending Docker build request...");
