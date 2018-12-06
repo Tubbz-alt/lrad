@@ -164,15 +164,13 @@ impl LradDaemon {
                 .map_err(|err| -> Error { err.into() })
                 .and_then(move |tmp_dir| {
                     debug!("Cloning git repo with dns record {}", dns_record_name);
-                    debug!(
-                        "{:?}",
-                        Command::new("git")
-                            .arg("clone")
-                            .arg(format!("http://localhost:8080/ipns/{}", dns_record_name))
-                            .arg("--single-branch")
-                            .current_dir(tmp_dir.path())
-                            .output()?
-                    );
+                    let git_clone_output = Command::new("git")
+                        .arg("clone")
+                        .arg(format!("http://localhost:8080/ipns/{}", dns_record_name))
+                        .arg("--single-branch")
+                        .current_dir(tmp_dir.path())
+                        .output()?;
+                    debug!("{:?}", git_clone_output);
                     let mut repo_path = tmp_dir.path().to_path_buf();
                     repo_path.push(dns_record_name.to_string());
                     let repo = Repository::discover(repo_path)?;
@@ -183,8 +181,7 @@ impl LradDaemon {
                 })
                 .and_then(|(ok, image_name, _tmp_dir)| {
                     debug!("Creating docker container");
-                    docker::create_new_container(image_name.clone(), None)
-                        .map(|x| (x, image_name))
+                    docker::create_new_container(image_name.clone(), None).map(|x| (x, image_name))
                 })
                 .and_then(|(create_container_response, image_name)| {
                     debug!("Listing docker images");
