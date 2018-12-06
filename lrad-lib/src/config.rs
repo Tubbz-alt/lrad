@@ -46,11 +46,10 @@ impl CliConfig {
 #[derive(Deserialize, Serialize)]
 pub struct DaemonConfig {
     /// e.g. git.lrad.io
-    pub dns_record_name: String
+    pub dns_record_name: String,
 }
 
 impl DaemonConfig {
-
     pub fn try_from(path: &Path) -> Result<Self> {
         let mut file = File::open(path)?;
         let metadata = file.metadata()?;

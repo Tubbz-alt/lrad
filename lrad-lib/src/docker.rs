@@ -1,15 +1,14 @@
 use actix_web::{client, HttpMessage};
-use futures::future;
 use futures::prelude::*;
 use git2::Repository;
 use percent_encoding::{utf8_percent_encode, QUERY_ENCODE_SET};
+use std::collections::HashMap;
 use tar::Builder;
 use tokio_uds::UnixStream;
 
-use crate::error::{BoxFuture, Error, Result};
+use crate::error::Error;
 use crate::vcs::VcsError;
 
-use std::sync::mpsc;
 use std::time::Duration;
 
 pub fn build_image(
@@ -74,6 +73,14 @@ pub struct CreateContainerResponse {
 struct CreateContainerRequest {
     #[serde(rename = "Image")]
     image: String,
+    #[serde(rename = "HostConfig")]
+    host_config: Option<HostConfig>,
+}
+
+#[derive(Serialize)]
+struct HostConfig {
+    #[serde(rename = "PublishAllPorts")]
+    publish_all_ports: Option<bool>,
 }
 
 pub fn create_new_container(
@@ -87,7 +94,12 @@ pub fn create_new_container(
                 .header("Host", "lrad")
                 .with_connection(client::Connection::from_stream(stream))
                 .timeout(Duration::from_secs(30))
-                .json(CreateContainerRequest { image: image_name })
+                .json(CreateContainerRequest {
+                    image: image_name,
+                    host_config: Some(HostConfig {
+                        publish_all_ports: Some(true),
+                    }),
+                })
                 .map(|x| {
                     debug!("Sending Docker create container...");
                     x
