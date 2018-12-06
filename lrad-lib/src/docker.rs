@@ -78,14 +78,34 @@ struct CreateContainerRequest {
 }
 
 #[derive(Serialize)]
-struct HostConfig {
+pub struct HostConfig {
     #[serde(rename = "PublishAllPorts")]
-    publish_all_ports: Option<bool>,
+    pub publish_all_ports: Option<bool>,
+    #[serde(rename = "PortBindings")]
+    pub port_bindings: HashMap<String, Vec<PortBinding>>,
+}
+
+#[derive(Serialize, Debug)]
+pub struct PortBinding {
+    #[serde(rename = "HostIp")]
+    host_ip: Option<String>,
+    #[serde(rename = "HostPort")]
+    host_port: String,
+}
+
+impl From<&crate::config::PortBinding> for PortBinding {
+    fn from(other: &crate::config::PortBinding) -> Self {
+        Self {
+            host_ip: other.host_ip.map(|x| x.to_string()),
+            host_port: other.host_port.to_string(),
+        }
+    }
 }
 
 pub fn create_new_container(
-    image_name: String,
+    image: String,
     container_name: Option<String>,
+    host_config: Option<HostConfig>,
 ) -> impl Future<Item = CreateContainerResponse, Error = Error> {
     UnixStream::connect("/var/run/docker.sock")
         .map_err(|err| Error::from(err))
@@ -95,10 +115,8 @@ pub fn create_new_container(
                 .with_connection(client::Connection::from_stream(stream))
                 .timeout(Duration::from_secs(30))
                 .json(CreateContainerRequest {
-                    image: image_name,
-                    host_config: Some(HostConfig {
-                        publish_all_ports: Some(true),
-                    }),
+                    image,
+                    host_config,
                 })
                 .map(|x| {
                     debug!("Sending Docker create container...");

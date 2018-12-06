@@ -9,7 +9,8 @@ extern crate log;
 use crate::dns::DnsRecordPutter;
 use futures::prelude::*;
 use futures::{future, stream};
-use git2::{build::RepoBuilder, DiffOptions, Repository, RepositoryState};
+use git2::{DiffOptions, Repository, RepositoryState};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
@@ -23,7 +24,8 @@ mod ipfs;
 mod vcs;
 
 pub use self::dns::DnsTxtRecordResponse;
-use self::error::{BoxFuture, Error, ErrorKind, Result};
+use self::docker::HostConfig;
+use self::error::{BoxFuture, Error, Result};
 
 #[cfg(test)]
 mod tests {
@@ -159,6 +161,15 @@ impl LradDaemon {
             return Box::new(future::ok(false));
         }
         let dns_record_name = String::from(dns_record_name.unwrap());
+        let mut port_bindings = HashMap::with_capacity(self.config.port_map.len());
+        self.config
+            .port_map
+            .iter()
+            .map(|x| (x.0, x.1.iter().map(|y| y.into()).collect()))
+            .for_each(|x| {
+                port_bindings.insert(x.0.clone(), x.1);
+            });
+        debug!("Port bindings are {:?}", port_bindings);
         Box::new(
             future::result(TempDir::new())
                 .map_err(|err| -> Error { err.into() })
@@ -181,7 +192,15 @@ impl LradDaemon {
                 })
                 .and_then(|(ok, image_name, _tmp_dir)| {
                     debug!("Creating docker container");
-                    docker::create_new_container(image_name.clone(), None).map(|x| (x, image_name))
+                    docker::create_new_container(
+                        image_name.clone(),
+                        None,
+                        Some(HostConfig {
+                            port_bindings,
+                            publish_all_ports: None,
+                        }),
+                    )
+                    .map(|x| (x, image_name))
                 })
                 .and_then(|(create_container_response, image_name)| {
                     debug!("Listing docker images");

@@ -1,3 +1,5 @@
+use std::net::IpAddr;
+use std::collections::HashMap;
 use crate::dns::CloudflareConfig;
 use crate::ipfs::IpfsApiServerConfig;
 use std::fs::File;
@@ -47,6 +49,13 @@ impl CliConfig {
 pub struct DaemonConfig {
     /// e.g. git.lrad.io
     pub dns_record_name: String,
+    pub port_map: HashMap<String, Vec<PortBinding>>
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct PortBinding {
+    pub host_ip: Option<IpAddr>,
+    pub host_port: u16,
 }
 
 impl DaemonConfig {
